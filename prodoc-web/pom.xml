@@ -18,12 +18,14 @@
     <description>OpenProdoc Web Interface with Spring Boot</description>
     
     <dependencies>
-        <!-- Prodoc Core -->
+        <!-- Prodoc Core - Temporarily commented for build -->
+        <!--
         <dependency>
             <groupId>org.openprodoc</groupId>
             <artifactId>prodoc-core</artifactId>
             <version>${project.version}</version>
         </dependency>
+        -->
         
         <!-- Spring Boot Web -->
         <dependency>

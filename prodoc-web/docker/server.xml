@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Server port="8005" shutdown="SHUTDOWN">
+  <Listener className="org.apache.catalina.startup.VersionLoggerListener" />
+  <Listener className="org.apache.catalina.core.AprLifecycleListener" SSLEngine="on" />
+  <Listener className="org.apache.catalina.core.JreMemoryLeakPreventionListener" />
+  <Listener className="org.apache.catalina.mbeans.GlobalResourcesLifecycleListener" />
+  <Listener className="org.apache.catalina.core.ThreadLocalLeakPreventionListener" />
+
+  <GlobalNamingResources>
+    <Resource name="UserDatabase" auth="Container"
+              type="org.apache.catalina.UserDatabase"
+              description="User database that can be updated and saved"
+              factory="org.apache.catalina.users.MemoryUserDatabaseFactory"
+              pathname="conf/tomcat-users.xml" />
+  </GlobalNamingResources>
+
+  <Service name="Catalina">
+    <!-- Optimized HTTP Connector for Kubernetes -->
+    <Connector port="8090" protocol="HTTP/1.1"
+               connectionTimeout="20000"
+               redirectPort="8443"
+               maxThreads="150"
+               minSpareThreads="25"
+               maxSpareThreads="75"
+               enableLookups="false"
+               compression="on"
+               compressionMinSize="2048"
+               compressibleMimeType="text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json"
+               server="OpenProdoc Red" />
+
+    <Engine name="Catalina" defaultHost="localhost">
+      <Realm className="org.apache.catalina.realm.LockOutRealm">
+        <Realm className="org.apache.catalina.realm.UserDatabaseRealm"
+               resourceName="UserDatabase"/>
+      </Realm>
+
+      <Host name="localhost"  appBase="webapps"
+            unpackWARs="false" autoDeploy="false">
+
+        <!-- Access log with JSON format for structured logging -->
+        <Valve className="org.apache.catalina.valves.AccessLogValve" directory="logs"
+               prefix="access_log" suffix=".txt"
+               pattern='{"timestamp":"%{yyyy-MM-dd HH:mm:ss}t","remoteAddr":"%a","method":"%m","uri":"%U","query":"%q","status":%s,"bytes":%b,"referer":"%{Referer}i","userAgent":"%{User-Agent}i","duration":%D}' />
+
+        <!-- Static content caching -->
+        <Valve className="org.apache.catalina.valves.rewrite.RewriteValve" />
+
+        <!-- Context for the web application -->
+        <Context path="/web" docBase="web" reloadable="false">
+          <!-- Resource caching for static assets -->
+          <Resources cacheMaxSize="100000" 
+                     cachingAllowed="true"
+                     cacheObjectMaxSize="10240" />
+        </Context>
+      </Host>
+    </Engine>
+  </Service>
+</Server>

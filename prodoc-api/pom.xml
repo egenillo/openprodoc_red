@@ -17,12 +17,14 @@
     <description>OpenProdoc REST API Service with Spring Boot</description>
     
     <dependencies>
-        <!-- Prodoc Core -->
+        <!-- Prodoc Core - Temporarily commented for build -->
+        <!--
         <dependency>
             <groupId>org.openprodoc</groupId>
             <artifactId>prodoc-core</artifactId>
             <version>${project.version}</version>
         </dependency>
+        -->
         
         <!-- Spring Boot -->
         <dependency>
@@ -59,6 +61,18 @@
             <optional>true</optional>
         </dependency>
         
+        <!-- Logging Dependencies -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-logging</artifactId>
+        </dependency>
+        
+        <!-- SLF4J Implementation -->
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+        </dependency>
+        
         <!-- Micrometer Metrics -->
         <dependency>
             <groupId>io.micrometer</groupId>
@@ -69,7 +83,8 @@
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
         
-        <!-- Resilience4j -->
+        <!-- Resilience4j - Temporarily disabled for build -->
+        <!--
         <dependency>
             <groupId>io.github.resilience4j</groupId>
             <artifactId>resilience4j-circuitbreaker</artifactId>
@@ -86,12 +101,26 @@
             <groupId>io.github.resilience4j</groupId>
             <artifactId>resilience4j-spring-boot2</artifactId>
         </dependency>
+        -->
         
         <!-- OpenAPI Documentation -->
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-ui</artifactId>
             <version>1.7.0</version>
+        </dependency>
+        
+        <!-- PostgreSQL -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        
+        <!-- HikariCP for connection pooling -->
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
         </dependency>
         
         <!-- Testing -->

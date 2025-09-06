@@ -1,0 +1,31 @@
+# Maven build artifacts
+target/
+!target/prodoc-web-*.war
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# Temporary files
+*.tmp
+*.log
+*.swp
+*.swo
+
+# Source files (only include compiled WAR)
+src/
+pom.xml
+Dockerfile

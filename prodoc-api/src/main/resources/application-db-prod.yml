@@ -1,0 +1,140 @@
+# Production Database Configuration
+# Profile: db-prod
+spring:
+  profiles:
+    include: prod
+
+# Production PostgreSQL Configuration
+openprodoc:
+  database:
+    # Connection settings (all from environment variables)
+    driver-class-name: org.postgresql.Driver
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    
+    # Production connection pool
+    max-pool-size: ${DB_MAX_POOL_SIZE:50}
+    min-idle: ${DB_MIN_IDLE:10}
+    connection-timeout: ${DB_CONNECTION_TIMEOUT:30000} # 30 seconds
+    idle-timeout: ${DB_IDLE_TIMEOUT:600000} # 10 minutes
+    max-lifetime: ${DB_MAX_LIFETIME:1800000} # 30 minutes
+    leak-detection-threshold: ${DB_LEAK_DETECTION:120000} # 2 minutes
+    connection-test-query: "SELECT 1"
+    
+    # Production optimizations
+    cache-prep-stmts: true
+    prep-stmt-cache-size: 500
+    prep-stmt-cache-sql-limit: 4096
+    use-server-prep-stmts: true
+    rewrite-batched-statements: true
+    maintain-time-stats: false # Disabled for performance
+    log-unclosed-connections: false
+
+  # Production resilience settings
+  resilience:
+    circuit-breaker-failure-threshold: 5
+    circuit-breaker-slow-call-threshold: 8
+    circuit-breaker-slow-call-duration: PT5S
+    circuit-breaker-wait-duration-in-open-state: PT30S
+    circuit-breaker-permitted-calls-in-half-open-state: 3
+    circuit-breaker-sliding-window-size: 15
+    
+    retry-max-attempts: 3
+    retry-wait-duration: PT2S
+    retry-exponential-backoff-multiplier: 2.0
+    time-limiter-timeout: PT10S
+
+# Flyway production settings
+spring:
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    validate-on-migrate: true
+    out-of-order: false
+    clean-disabled: true # Never allow clean in production
+    locations: classpath:db/migration
+    sql-migration-suffixes: .sql
+    repeatable-sql-migration-prefix: R
+    
+# JPA production settings
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQL10Dialect
+        default_schema: opd_core
+        jdbc:
+          batch_size: 50
+          fetch_size: 100
+        generate_statistics: false
+        order_inserts: true
+        order_updates: true
+        batch_versioned_data: true
+        
+# Production database monitoring (limited exposure)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+      show-components: when-authorized
+      roles: ADMIN
+  health:
+    db:
+      enabled: true
+    diskspace:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    jdbc:
+      enabled: true
+    hikaricp:
+      enabled: true
+
+# Production logging (minimal database logging)
+logging:
+  level:
+    org.springframework.jdbc: WARN
+    org.hibernate.SQL: WARN
+    org.flywaydb: INFO
+    com.zaxxer.hikari: INFO
+    io.github.resilience4j: INFO
+    org.openprodoc.api.service.ResilientDatabaseService: INFO
+    
+# Production database security
+openprodoc-prod:
+  database:
+    # Security settings
+    ssl-mode: ${DB_SSL_MODE:require}
+    ssl-cert: ${DB_SSL_CERT:}
+    ssl-key: ${DB_SSL_KEY:}
+    ssl-root-cert: ${DB_SSL_ROOT_CERT:}
+    
+    # Connection security
+    require-ssl: ${DB_REQUIRE_SSL:true}
+    verify-server-certificate: ${DB_VERIFY_CERT:true}
+    
+    # Performance monitoring
+    enable-performance-monitoring: true
+    slow-query-threshold-ms: 5000
+    
+    # Backup and maintenance
+    enable-automatic-statistics-update: true
+    statistics-update-interval: 3600 # 1 hour
+    
+    # Connection validation
+    validate-on-borrow: true
+    validation-query-timeout: 3
+    
+    # Advanced connection pool settings
+    connection-init-sql: "SET application_name = 'openprodoc-red-prod'"
+    pool-prepared-statements: true
+    max-prepared-statements: 100

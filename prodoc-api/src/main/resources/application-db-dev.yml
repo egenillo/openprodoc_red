@@ -1,0 +1,120 @@
+# Development Database Configuration
+# Profile: db-dev
+spring:
+  profiles:
+    include: dev
+
+# Development PostgreSQL Configuration
+openprodoc:
+  database:
+    # Connection settings
+    driver-class-name: org.postgresql.Driver
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/openprodoc_dev}
+    username: ${DB_USERNAME:openprodoc_dev}
+    password: ${DB_PASSWORD:openprodoc_dev}
+    
+    # Small connection pool for development
+    max-pool-size: ${DB_MAX_POOL_SIZE:5}
+    min-idle: ${DB_MIN_IDLE:1}
+    connection-timeout: ${DB_CONNECTION_TIMEOUT:10000} # 10 seconds
+    idle-timeout: ${DB_IDLE_TIMEOUT:300000} # 5 minutes
+    max-lifetime: ${DB_MAX_LIFETIME:600000} # 10 minutes
+    leak-detection-threshold: ${DB_LEAK_DETECTION:30000} # 30 seconds
+    connection-test-query: "SELECT 1"
+    
+    # Development optimizations
+    cache-prep-stmts: true
+    prep-stmt-cache-size: 50
+    prep-stmt-cache-sql-limit: 1024
+    use-server-prep-stmts: false # Disabled for easier debugging
+    rewrite-batched-statements: false
+    maintain-time-stats: true # Enable for development monitoring
+    log-unclosed-connections: true
+
+  # Relaxed resilience settings for development
+  resilience:
+    circuit-breaker-failure-threshold: 8
+    circuit-breaker-slow-call-threshold: 15
+    circuit-breaker-slow-call-duration: PT10S
+    circuit-breaker-wait-duration-in-open-state: PT15S
+    circuit-breaker-permitted-calls-in-half-open-state: 5
+    circuit-breaker-sliding-window-size: 10
+    
+    retry-max-attempts: 2
+    retry-wait-duration: PT1S
+    retry-exponential-backoff-multiplier: 1.5
+    time-limiter-timeout: PT5S
+
+# Flyway development settings
+spring:
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    validate-on-migrate: false # Relaxed for development
+    out-of-order: true # Allow out-of-order migrations in dev
+    clean-disabled: false # Allow clean in development
+    locations: classpath:db/migration
+    sql-migration-suffixes: .sql
+    repeatable-sql-migration-prefix: R
+    
+# JPA settings for development
+  jpa:
+    hibernate:
+      ddl-auto: validate # Let Flyway handle schema
+    show-sql: true
+    format-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQL10Dialect
+        default_schema: opd_core
+        jdbc:
+          batch_size: 20
+          fetch_size: 50
+        format_sql: true
+        use_sql_comments: true
+        generate_statistics: true
+        session.events.log.LOG_QUERIES_SLOWER_THAN_MS: 1000
+
+# Development database monitoring
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,flyway,liquibase
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+  health:
+    db:
+      enabled: true
+    diskspace:
+      enabled: true
+  metrics:
+    export:
+      simple:
+        enabled: true
+    jdbc:
+      enabled: true
+    hikaricp:
+      enabled: true
+
+# Development logging
+logging:
+  level:
+    org.springframework.jdbc: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    org.flywaydb: DEBUG
+    com.zaxxer.hikari: DEBUG
+    io.github.resilience4j: DEBUG
+    org.openprodoc.api.service.ResilientDatabaseService: DEBUG
+    
+# Development-specific database initialization
+openprodoc-dev:
+  database:
+    # Auto-create development data
+    create-sample-data: true
+    create-test-users: true
+    enable-sql-logging: true
+    enable-performance-logging: true

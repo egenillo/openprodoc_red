@@ -19,17 +19,26 @@
 ### Modern Technology Stack
 * **Spring Boot 2.7** - Modern Java application framework
 * **Maven multi-module** - Professional build system
-* **PostgreSQL optimized** - Primary database with connection pooling
-* **JSON structured logging** - Cloud-native observability
+* **PostgreSQL 16 optimized** - Advanced database layer with HikariCP
+* **JSON structured logging** - Cloud-native observability with Logstash format
 * **REST API first** - Modern API-driven architecture
 * **Thymeleaf templates** - Modern web interface engine
 
 ### Enhanced Security & Operations
 * **12-factor app compliance** - Environment-based configuration
 * **Spring Security integration** - Modern authentication/authorization
-* **Health checks & metrics** - Kubernetes-ready monitoring
+* **Health checks & metrics** - Kubernetes-ready monitoring with circuit breakers
 * **Externalized configuration** - Environment variables and profiles
 * **Async logging** - High-performance structured logs
+* **Database resilience** - Circuit breakers, retry logic, and connection pooling
+
+### Production-Grade Database Layer
+* **PostgreSQL-specific optimizations** - Prepared statement caching, batch operations
+* **HikariCP connection pooling** - Environment-aware pool sizing (dev/prod/docker)
+* **Flyway database migrations** - Version-controlled schema with PostgreSQL features
+* **Database health monitoring** - Connection pool metrics and performance tracking
+* **Resilience4j integration** - Circuit breakers and retry patterns for fault tolerance
+* **Multi-environment profiles** - Optimized configurations for dev/prod/docker/k8s
 
 ----
 
@@ -84,6 +93,13 @@
 
 ----
 
+## 🗄️ Database Layer
+
+OpenProdoc Red features a database layer optimized for PostgreSQL and cloud deployments.
+
+
+----
+
 ## 🚢 Kubernetes Deployment
 
 ### Quick Start with Helm
@@ -101,6 +117,8 @@ helm install openprodoc ./helm/openprodoc
 DB_URL=jdbc:postgresql://postgres:5432/openprodoc
 DB_USERNAME=openprodoc
 DB_PASSWORD=your-secure-password
+DB_MAX_POOL_SIZE=20  # HikariCP pool size
+DB_SSL_MODE=require  # SSL connection mode
 
 # Storage Configuration  
 STORAGE_TYPE=FILESYSTEM  # or S3
@@ -109,6 +127,10 @@ STORAGE_PATH=/app/storage
 # Security
 JWT_SECRET=your-jwt-secret
 AUTH_TYPE=OPD  # or LDAP
+
+# Resilience Configuration
+CIRCUIT_BREAKER_FAILURE_THRESHOLD=5
+RETRY_MAX_ATTEMPTS=3
 
 # Monitoring
 SPRING_PROFILES_ACTIVE=prod
@@ -149,13 +171,35 @@ docker build -t openprodoc-red/web:latest prodoc-web/
 
 ### Health Checks
 * **API Health**: `http://localhost:8080/api/actuator/health`
+  - Database connectivity and connection pool status
+  - Circuit breaker states and retry metrics
+  - PostgreSQL-specific metrics (connections, database size)
 * **Web Health**: `http://localhost:8090/web/actuator/health`
 * **Metrics**: `http://localhost:8080/api/actuator/prometheus`
+  - HikariCP connection pool metrics
+  - Resilience4j circuit breaker and retry metrics
+  - Database query performance metrics
+
+### Database Monitoring Endpoints
+```bash
+# Detailed database health
+curl http://localhost:8080/api/actuator/health/database
+
+# HikariCP metrics
+curl http://localhost:8080/api/actuator/metrics/hikaricp.connections.active
+
+# Circuit breaker status  
+curl http://localhost:8080/api/actuator/metrics/resilience4j.circuitbreaker.state
+
+# Custom database metrics
+curl http://localhost:8080/api/v1/config/database
+```
 
 ### Logging
-* **Development**: Colored console output
+* **Development**: Colored console output with SQL logging
 * **Production**: Structured JSON logs for log aggregation
 * **Async processing** for high-performance logging
+* **Database query logging** with performance metrics
 
 ----
 

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title th:text="${title}">OpenProdoc - Main</title>
+    <link rel="stylesheet" type="text/css" th:href="@{/css/style.css}">
+    <link rel="stylesheet" type="text/css" th:href="@{/css/main.css}">
+    <link rel="shortcut icon" th:href="@{/img/favicon.ico}">
+</head>
+<body>
+    <!-- Header -->
+    <header class="main-header">
+        <div class="header-left">
+            <img th:src="@{/img/logo.png}" alt="OpenProdoc" class="logo-small">
+            <h1>OpenProdoc</h1>
+        </div>
+        <div class="header-right">
+            <span class="welcome-text">Welcome, <strong th:text="${username}">User</strong></span>
+            <a th:href="@{/logout}" class="btn btn-logout">Logout</a>
+        </div>
+    </header>
+    
+    <!-- Main Content -->
+    <div class="main-container">
+        <!-- Navigation Menu -->
+        <nav class="sidebar">
+            <ul class="nav-menu">
+                <li><a href="#" onclick="loadDocuments()">Documents</a></li>
+                <li><a href="#" onclick="loadFolders()">Folders</a></li>
+                <li><a href="#" onclick="loadSearch()">Search</a></li>
+                <li><a href="#" onclick="loadReports()">Reports</a></li>
+                <li><a href="#" onclick="loadAdmin()">Administration</a></li>
+                <li><a href="#" onclick="loadThesaurus()">Thesaurus</a></li>
+            </ul>
+        </nav>
+        
+        <!-- Content Area -->
+        <main class="content-area">
+            <div class="content-header">
+                <h2 id="content-title">Welcome to OpenProdoc</h2>
+                <div class="content-actions">
+                    <button class="btn btn-primary" onclick="refreshContent()">Refresh</button>
+                </div>
+            </div>
+            
+            <div id="content-body" class="content-body">
+                <div class="welcome-panel">
+                    <h3>Document Management System</h3>
+                    <p>Select an option from the menu to get started.</p>
+                    
+                    <div class="quick-actions">
+                        <div class="action-card">
+                            <h4>Documents</h4>
+                            <p>Manage your documents</p>
+                            <button class="btn btn-secondary" onclick="loadDocuments()">Open</button>
+                        </div>
+                        
+                        <div class="action-card">
+                            <h4>Search</h4>
+                            <p>Find documents and folders</p>
+                            <button class="btn btn-secondary" onclick="loadSearch()">Open</button>
+                        </div>
+                        
+                        <div class="action-card">
+                            <h4>Reports</h4>
+                            <p>Generate reports</p>
+                            <button class="btn btn-secondary" onclick="loadReports()">Open</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Footer -->
+    <footer class="main-footer">
+        <p>&copy; 2024 OpenProdoc v3.0.0 | Enterprise Content Management</p>
+    </footer>
+    
+    <!-- Scripts -->
+    <script th:src="@{/js/main.js}"></script>
+    <script>
+        // Initialize application
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('OpenProdoc Web Interface loaded');
+            // TODO: Load user preferences, initialize UI components
+        });
+        
+        // Navigation functions
+        function loadDocuments() {
+            updateContent('Documents', 'Loading documents...');
+            // TODO: Load documents via REST API
+        }
+        
+        function loadFolders() {
+            updateContent('Folders', 'Loading folders...');
+            // TODO: Load folders via REST API  
+        }
+        
+        function loadSearch() {
+            updateContent('Search', 'Search interface loading...');
+            // TODO: Load search interface
+        }
+        
+        function loadReports() {
+            updateContent('Reports', 'Loading reports...');
+            // TODO: Load reports interface
+        }
+        
+        function loadAdmin() {
+            updateContent('Administration', 'Loading administration panel...');
+            // TODO: Load admin interface
+        }
+        
+        function loadThesaurus() {
+            updateContent('Thesaurus', 'Loading thesaurus...');
+            // TODO: Load thesaurus interface
+        }
+        
+        function updateContent(title, content) {
+            document.getElementById('content-title').textContent = title;
+            document.getElementById('content-body').innerHTML = '<p>' + content + '</p>';
+        }
+        
+        function refreshContent() {
+            // TODO: Refresh current view
+            console.log('Refreshing content...');
+        }
+    </script>
+</body>
+</html>

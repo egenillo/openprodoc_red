@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title th:text="${title}">OpenProdoc - Login</title>
+    <link rel="stylesheet" type="text/css" th:href="@{/css/style.css}">
+    <link rel="stylesheet" type="text/css" th:href="@{/css/login.css}">
+    <link rel="shortcut icon" th:href="@{/img/favicon.ico}">
+</head>
+<body class="login-body">
+    <div class="login-container">
+        <div class="login-header">
+            <img th:src="@{/img/logo.png}" alt="OpenProdoc" class="logo">
+            <h1>OpenProdoc</h1>
+            <p>Enterprise Content Management</p>
+        </div>
+        
+        <div class="login-form-container">
+            <!-- Error messages -->
+            <div th:if="${error}" class="alert alert-error">
+                <span th:text="${error}">Error message</span>
+            </div>
+            
+            <!-- Success messages -->
+            <div th:if="${message}" class="alert alert-success">
+                <span th:text="${message}">Success message</span>
+            </div>
+            
+            <form th:action="@{/login}" method="post" class="login-form">
+                <div class="form-group">
+                    <label for="User">Username:</label>
+                    <input type="text" 
+                           id="User" 
+                           name="User" 
+                           th:value="${username}"
+                           required 
+                           autocomplete="username"
+                           class="form-control">
+                </div>
+                
+                <div class="form-group">
+                    <label for="Password">Password:</label>
+                    <input type="password" 
+                           id="Password" 
+                           name="Password" 
+                           required 
+                           autocomplete="current-password"
+                           class="form-control">
+                </div>
+                
+                <div class="form-group">
+                    <button type="submit" class="btn btn-primary btn-login">
+                        Login
+                    </button>
+                </div>
+            </form>
+        </div>
+        
+        <div class="login-footer">
+            <p>&copy; 2024 OpenProdoc. All rights reserved.</p>
+            <p>Version 3.0.0</p>
+        </div>
+    </div>
+    
+    <script th:src="@{/js/login.js}"></script>
+</body>
+</html>

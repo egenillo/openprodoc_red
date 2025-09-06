@@ -1,0 +1,68 @@
+# Production Profile Configuration
+spring:
+  profiles: prod
+
+# OpenProdoc Production Settings
+openprodoc:
+  database:
+    driver-class-name: org.postgresql.Driver
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    max-pool-size: ${DB_MAX_POOL_SIZE:20}
+    min-idle: ${DB_MIN_IDLE:5}
+    connection-timeout: ${DB_CONNECTION_TIMEOUT:30000}
+    idle-timeout: ${DB_IDLE_TIMEOUT:600000}
+    max-lifetime: ${DB_MAX_LIFETIME:1800000}
+  
+  storage:
+    type: ${STORAGE_TYPE:S3}
+    s3-bucket: ${S3_BUCKET}
+    s3-region: ${S3_REGION:us-east-1}
+  
+  security:
+    auth-type: ${AUTH_TYPE:LDAP}
+    session-timeout: ${SESSION_TIMEOUT:1800}
+    jwt-secret: ${JWT_SECRET}
+  
+  fulltext:
+    engine: ${FULLTEXT_ENGINE:LUCENE}
+    index-path: ${FULLTEXT_INDEX_PATH:/var/openprodoc/lucene}
+
+# Production logging (JSON format)
+logging:
+  level:
+    root: WARN
+    org.openprodoc: INFO
+    prodoc: INFO
+    org.springframework: WARN
+    org.springframework.web: INFO
+  pattern:
+    console: "%msg%n"
+
+# Limited actuator endpoints for production
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus,info
+  endpoint:
+    health:
+      show-details: when-authorized
+
+# Disable Swagger in production
+springdoc:
+  swagger-ui:
+    enabled: false
+  api-docs:
+    enabled: false
+
+# Production server settings
+server:
+  port: ${SERVER_PORT:8080}
+  compression:
+    enabled: true
+  error:
+    include-stacktrace: never
+    include-exception: false
+  forward-headers-strategy: native

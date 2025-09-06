@@ -1,0 +1,1605 @@
+/*
+ * OpenProdoc
+ * 
+ * See the help doc files distributed with
+ * this work for additional information regarding copyright ownership.
+ * Joaquin Hierro licenses this file to You under:
+ * 
+ * License GNU Affero GPL v3 http://www.gnu.org/licenses/agpl.html
+ * 
+ * you may not use this file except in compliance with the License.  
+ * Unless agreed to in writing, software is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * 
+ * author: Joaquin Hierro      2011
+ * 
+ */
+
+package prodoc;
+
+import java.io.File;
+import java.io.PrintWriter;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.StringTokenizer;
+
+/**
+ * Class responsible of actual execution of pending task
+ * @author jhierrot
+ */
+public class PDTasksExec extends PDTasksDef
+{
+
+/**
+ *
+ */
+public static final String fPDID="PDId";
+/**
+ *
+ */
+public static final String fNEXTDATE="NextDate";
+
+/**
+ *
+ */
+static private Record TaksTypeStruct=null;
+
+/**
+ *
+ */
+private String PDId;
+private Date NextDate;
+private boolean GenAuto=false;
+
+static private ObjectsCache TaksDefObjectsCache = null;
+
+//-------------------------------------------------------------------------
+/**
+ * Default constructor
+ * @param Drv OpenProdoc driver-session for access to DDBB
+ * @throws PDException in any error
+ */
+public PDTasksExec(DriverGeneric Drv)  throws PDException
+{
+super(Drv);
+}
+//-------------------------------------------------------------------------
+/**
+ * Assign new values to the TaskExec object
+ * @param Rec Record of TaskExec type with new values
+ * @throws PDException in any error
+ */
+@Override
+public void assignValues(Record Rec) throws PDException
+{
+super.assignValues(Rec);    
+setPDId((String) Rec.getAttr(fPDID).getValue());
+setNextDate((Date) Rec.getAttr(fNEXTDATE).getValue());
+assignCommonValues(Rec);
+}
+//-------------------------------------------------------------------------
+/**
+ * Returns a record with the current values
+ * @return a record with the current values
+ * @throws PDException in any error
+ */
+@Override
+synchronized public Record getRecord() throws PDException
+{
+Record Rec=getRecordStruct();
+Rec.assign(super.getRecord().Copy());
+Rec.getAttr(fPDID).setValue(getPDId());
+Rec.getAttr(fNEXTDATE).setValue(getNextDate());
+getCommonValues(Rec);
+return(Rec);
+}
+//-------------------------------------------------------------------------
+/**
+ * Returns the name of TaskExec table in DDBB
+ * @return the name of TaskExec table in DDBB
+ */
+@Override
+public String getTabName()
+{
+return (getTableName());
+}
+//-------------------------------------------------------------------------
+/**
+ * Static method that returns the name of TaskExec table in DDBB
+ * @return the name of TaskExec table in DDBB
+ */
+static public String getTableName()
+{
+return ("PD_TASKSEXECPEND");
+}
+//-------------------------------------------------------------------------
+/**
+*
+* @return
+*/
+@Override
+Record getRecordStruct() throws PDException
+{
+if (TaksTypeStruct==null)
+    TaksTypeStruct=CreateRecordStruct();
+return(TaksTypeStruct.Copy());
+}
+//-------------------------------------------------------------------------
+/**
+*
+* @return
+*/
+static synchronized private Record CreateRecordStruct() throws PDException
+{
+if (TaksTypeStruct==null)
+    {
+    Record R=new Record();
+    CreateRecordStructBase(R);
+    R.addAttr( new Attribute(fPDID, fPDID, "Unique_identifier", Attribute.tSTRING, true, null, 32, true, false, false));
+    R.addAttr( new Attribute(fNEXTDATE, fNEXTDATE, "Next Date of execution", Attribute.tTIMESTAMP, true, null, 128, false, false, true));
+    return(R);
+    }
+else
+    return(TaksTypeStruct);
+}
+//-------------------------------------------------------------------------
+/**
+* The install method is generic because for instantiate a object, the class
+* need to access to the tables for definition
+ * @param Drv
+ * @throws PDException in any error
+*/
+static protected void InstallMulti(DriverGeneric Drv) throws PDException
+{
+}
+//-------------------------------------------------------------------------
+/**
+ * Create if necesary and Assign the Cache for the objects of this type of object
+ * @return the cache object for the type
+ */
+ @Override
+ protected ObjectsCache getObjCache()
+{
+if (TaksDefObjectsCache==null)
+    TaksDefObjectsCache=new ObjectsCache("TasksDefExec");
+return(TaksDefObjectsCache);    
+}
+//-------------------------------------------------------------------------
+/**
+ * Generates a programed task from a definition
+ * @param Task Definition of the task
+ * @throws PDException in any error
+ */
+void GenFromDef(PDTasksCron Task) throws PDException
+{
+super.assignValues(Task.getRecord());
+setPDId(GenerateId());
+setNextDate(Task.getNextDate());
+}
+//-------------------------------------------------------------------------
+/**
+ * @return the PDId
+ */
+public String getPDId()
+{
+return PDId;
+}
+//---------------------------------------------------------------------
+/**
+ * @param PDId the PDId to set
+ */
+public void setPDId(String PDId)
+{
+this.PDId = PDId;
+}
+//---------------------------------------------------------------------
+/**
+ * Generates an unique identifier
+ * @return The identifier generated
+ */
+public String GenerateId()
+{
+StringBuilder genId = new StringBuilder();
+genId.append(Long.toHexString(System.currentTimeMillis()));
+genId.append("-");
+genId.append(Long.toHexString(Double.doubleToLongBits(Math.random())));
+return genId.toString();
+}
+//-------------------------------------------------------------------------
+/**
+ * Retrieves and executes all the pending task
+ * @param TaskCategory catrgory group (* for all)
+ */
+void ExecutePendingTaskCat(String TaskCategory) throws PDException
+{
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.ExecutePendingTaskCat>:" + TaskCategory);
+Cursor CursorId=null;
+try {
+Conditions CondT=new Conditions();
+if (TaskCategory!=null && !TaskCategory.equals("*"))
+    {
+    Condition c=new Condition(fCATEGORY, Condition.cEQUAL, TaskCategory);
+    CondT.addCondition(c);
+    }
+Query QBE=new Query(getTabName(), getRecordStruct(),CondT, fPDID);
+CursorId=getDrv().OpenCursor(QBE);
+Record Res=getDrv().NextRec(CursorId);
+ArrayList<Record> LT=new ArrayList<Record>();
+while (Res!=null)
+    {
+    LT.add(Res);
+    Res=getDrv().NextRec(CursorId);
+    }      
+PDTasksExec Task=new PDTasksExec(getDrv());
+PDTasksExecEnded TaskEnd=new PDTasksExecEnded(getDrv());
+for (int i = 0; i < LT.size(); i++)
+    {
+    Res = LT.get(i);
+    Task.assignValues(Res);    
+    getDrv().IniciarTrans();
+    Record R=TaskEnd.getRecord();
+    R.assign(Task.getRecord());
+    TaskEnd.assignValues(R);
+    TaskEnd.setStartDate(new Date());
+    try {
+    if (PDLog.isDebug())
+        PDLog.Debug("PDTasksExec.Executing:" + Task.getName());        
+    Task.Execute();
+    TaskEnd.setEndsOk(true);
+    TaskEnd.setResult("");
+    } catch (Exception ex)
+        {
+        if (PDLog.isInfo())
+            PDLog.Info("ExecutePendingTaskCat error:"+ex.getLocalizedMessage());
+        TaskEnd.setEndsOk(false);
+        TaskEnd.setResult(ex.getLocalizedMessage());        
+        }
+    TaskEnd.setEndDate(new Date());   
+    TaskEnd.insert();
+    Task.delete();    
+    getDrv().CerrarTrans();
+    }
+getDrv().CloseCursor(CursorId);
+} catch (Exception ex)
+    { 
+    ex.printStackTrace();
+    if (CursorId!=null)    
+        getDrv().CloseCursor(CursorId);
+    if (getDrv().isInTransaction())
+        getDrv().AnularTrans();
+    throw new PDException(ex.getLocalizedMessage());
+    }
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.ExecutePendingTaskCat <");
+}
+//-------------------------------------------------------------------------
+/**
+ * Executes the task defined in current object
+ * Beware that can be VERY DANGEROUS and DELETE THOUsands OF oBJECTS
+ * @throws PDException in any error 
+ */
+public void Execute()  throws PDException
+{
+switch (getType())
+    {
+    case fTASK_DELETE_OLD_FOLD: DeleteOldFold();
+        break;
+    case fTASK_DELETE_OLD_DOC: DeleteOldDoc();
+        break;
+    case fTASK_PURGEDOC: PurgeDoc();
+        break;
+    case fTASK_IMPORT: Import(getParam2(), getParam3(), getParam4(), getParam()!=null && getParam().equals("1"));
+        break;
+    case fTASK_EXPORT: Export();
+        break;
+    case fTASK_DOCSREPORT: DocsReport();
+        break;
+    case fTASK_FOLDSREPORT: FoldsReport();
+        break;
+    case fTASK_LOCALSYNC: 
+        PDFolders F=new PDFolders(getDrv());
+        String IdFold=F.getIdPath(getParam3());
+        LocalSync(getParam2(), IdFold, getParam4(), getParam()!=null && getParam().equals("1"));
+        break;
+    case fTASK_CUSTOMDOC: 
+    case fTASK_CUSTOMFOLD: ExecuteCustomCron();
+        break;
+    case PDTasksDefEvent.fTASKEVENT_UPDATE_FOLD: ExecuteUpdFold();
+        break;
+    case PDTasksDefEvent.fTASKEVENT_COPY_FOLD: ExecuteCopyFold();
+        break;
+    case PDTasksDefEvent.fTASKEVENT_EXPORT_FOLD: ExecuteExportFold();
+        break;
+    case PDTasksDefEvent.fTASKEVENT_CUSTOM_FOLD: ExecuteCustomFold();
+        break;
+    case PDTasksDefEvent.fTASKEVENT_UPDATE_DOC: ExecuteUpdDoc();
+        break;
+    case PDTasksDefEvent.fTASKEVENT_COPY_DOC: ExecuteCopyDoc();
+        break;
+    case PDTasksDefEvent.fTASKEVENT_EXPORT_DOC: ExecuteExportDoc();
+        break;
+    case PDTasksDefEvent.fTASKEVENT_CONVERT_DOC: ExecuteConvertDoc();
+        break;
+    case PDTasksDefEvent.fTASKEVENT_FTINDEX_DOC: ExecuteFTIndexDoc();
+        break;
+    case PDTasksDefEvent.fTASKEVENT_FTUPDA_DOC: ExecuteFTUpdDoc();
+        break;
+    case PDTasksDefEvent.fTASKEVENT_FTDEL_DOC: ExecuteFTDelDoc();
+        break;
+    case PDTasksDefEvent.fTASKEVENT_CUSTOM_DOC: ExecuteCustomDoc();
+        break;    
+    default: PDExceptionFunc.GenPDException("Unexpected_Task", ""+getType());
+        break;
+    }
+}
+//-------------------------------------------------------------------------
+/**
+ * Generates a Cursor with the set of elements defined in configuration
+ * @return Cretaed Cursor
+ * @throws PDException In any error 
+ */
+public Cursor GenCur()  throws PDException
+{
+switch (getType())
+    {
+    case fTASK_DELETE_OLD_FOLD: return CurDeleteOldFold();
+    case fTASK_DELETE_OLD_DOC: return CurDeleteOldDoc();
+    case fTASK_PURGEDOC: return CurPurgeDoc();
+    case fTASK_EXPORT: return CurExport();
+    case fTASK_DOCSREPORT: return CurDocsReport();
+    case fTASK_FOLDSREPORT: return CurFoldsReport();
+    case fTASK_CUSTOMDOC: 
+    case fTASK_CUSTOMFOLD: return CurCustom();
+    }
+PDExceptionFunc.GenPDException("Undefined_task", ""+getType());
+return (null);
+}
+//-------------------------------------------------------------------------
+
+private void PurgeDoc() throws PDException
+{
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.PurgeDoc >"+getPDId());
+PDDocs D=new PDDocs(this.getDrv());
+Cursor CursorId=null;
+try {
+if (isTransact())  
+    getDrv().IniciarTrans();
+String Id=null;    
+CursorId=this.GenCur();    
+Record Res=getDrv().NextRec(CursorId);
+while (Res!=null)
+    {
+    try {
+    Id=(String)Res.getAttr(PDDocs.fPDID).getValue(); 
+    D.Purge(getObjType(), Id); 
+    } catch (Exception ex)
+        {
+        if (isTransact())    
+            PDException.GenPDException(ex.getMessage(), Id);
+        else    
+            PDLog.Error("PDTasksExec.PurgeDoc:"+ex.getLocalizedMessage());
+
+        }
+    Res=getDrv().NextRec(CursorId);
+    }
+getDrv().CloseCursor(CursorId);
+getDrv().CerrarTrans();
+} catch (Exception ex)
+    {
+    if (CursorId!=null)    
+        getDrv().CloseCursor(CursorId);
+    getDrv().AnularTrans();
+    PDLog.Error("PDTasksExec.PurgeDoc:"+ex.getLocalizedMessage());
+    }
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.PurgeDoc <"+getPDId());
+}
+//-------------------------------------------------------------------------
+/**
+ * Imports O.S. folders into OpenProdoc repository
+ * @throws PDException in any error 
+ */
+private void Import(String DefDocType, String ParentId, String Path, boolean Recursive) throws PDException
+{
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.Import >"+getPDId());
+File ImpFold=new File(Path);
+File []ListOrigin=ImpFold.listFiles();
+ArrayList DirList=new ArrayList(10);
+for (int i = 0; i < ListOrigin.length; i++) // first only folders and opd files to avouid double insert
+    {
+    File ListElement = ListOrigin[i];
+    if (ListElement==null) // deleted by double reference opd + doc
+        continue;
+    if (ListElement.isDirectory())
+        {
+        DirList.add(ListElement);
+        ListOrigin[i]=null;
+        continue;
+        }
+    if (ListElement.getName().endsWith(".opd"))
+        {
+        getDrv().ProcessXML(ListElement, ParentId);
+        int L2comp=ListElement.getName().length()-3;
+        String FileName=ListElement.getName().substring(0, L2comp);
+        for (int j = 0; j < ListOrigin.length; j++)
+            {   
+            if (ListOrigin[j]!=null && ListOrigin[j].getName().substring(0, L2comp).equals(FileName) 
+                    && !ListOrigin[j].isDirectory())
+               ListOrigin[j]=null; 
+            }
+        }
+    }
+for (File ListElement : ListOrigin)
+    {
+        if (ListElement==null) // deleted by double reference opd + doc
+            continue;
+        PDDocs NewDoc=new PDDocs(getDrv(), DefDocType);
+        NewDoc.setTitle(ListElement.getName());
+        NewDoc.setFile(ListElement.getAbsolutePath());
+        NewDoc.setDocDate(new Date(ListElement.lastModified()));
+        NewDoc.setParentId(ParentId);
+        NewDoc.insert();  
+    }
+ListOrigin=null; // to help gc and save memory during recursivity
+if (Recursive)
+    {
+    for (int i = 0; i < DirList.size(); i++)
+        {
+        File SubDir = (File) DirList.get(i);
+        PDFolders f=new PDFolders(getDrv(), getObjType());
+        f.setTitle(SubDir.getName());
+        f.setParentId(ParentId);
+        f.insert();
+        Import(DefDocType, f.getPDId(), SubDir.getAbsolutePath(), Recursive);    
+        }
+    }
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.Import <"+getPDId());
+}
+//-------------------------------------------------------------------------
+/**
+ * Imports O.S. folders into OpenProdoc repository
+ * @throws PDException in any error 
+ */
+private void LocalSync(String DefDocType, String ParentId, String Path, boolean Recursive) throws PDException
+{
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.LocalSync >"+getPDId());
+File ImpFold=new File(Path);
+File []ListOrigin=ImpFold.listFiles(); //Folders in FileSystem
+ArrayList DirList=new ArrayList(10);
+for (int i = 0; i < ListOrigin.length; i++) // first only folders and opd files to avouid double insert
+    {
+    File ListElement = ListOrigin[i];
+    if (ListElement==null) // deleted by double reference opd + doc
+        continue;
+    if (ListElement.isDirectory())
+        {
+        DirList.add(ListElement);
+        ListOrigin[i]=null;
+        continue;
+        }
+    if (ListElement.getName().endsWith(".opd"))
+        {
+        getDrv().ProcessXML(ListElement, ParentId);
+        int L2comp=ListElement.getName().length()-3;
+        String FileName=ListElement.getName().substring(0, L2comp);
+        for (int j = 0; j < ListOrigin.length; j++)
+            {   
+            if (ListOrigin[j]!=null && ListOrigin[j].getName().substring(0, L2comp).equals(FileName) 
+                    && !ListOrigin[j].isDirectory())
+               ListOrigin[j]=null; 
+            }
+        }
+    }
+PDDocs Do=new PDDocs(getDrv());
+HashMap<String, Record> TitleDoc=new HashMap();
+Cursor listContainedDocs = Do.getListContainedDocs(ParentId);
+Record Res=getDrv().NextRec(listContainedDocs);
+while (Res!=null)
+    {
+    String FileName=(String)Res.getAttr(PDDocs.fNAME).getValue();
+    boolean Deleted=true;
+    for (int i = 0; i < ListOrigin.length; i++)
+        {
+        if (ListOrigin[i]==null)
+            continue;
+        File SubDoc = (File) ListOrigin[i];
+        if (SubDoc.getName().equalsIgnoreCase(FileName))
+            {
+            Deleted=false;
+            break;
+            }  
+        }
+    if (Deleted)
+        {
+        Do.setPDId((String)Res.getAttr(PDDocs.fPDID).getValue());
+        Do.delete();
+        }
+    else
+        {
+        TitleDoc.put(FileName, Res);
+        }
+    Res=getDrv().NextRec(listContainedDocs);
+    }
+getDrv().CloseCursor(listContainedDocs);
+for (File ListElement : ListOrigin)
+    {
+    if (ListElement==null) // deleted by double reference opd + doc
+        continue;
+    PDDocs NewDoc=new PDDocs(getDrv(), DefDocType);
+    NewDoc.setTitle(ListElement.getName());
+    NewDoc.setFile(ListElement.getAbsolutePath());
+    NewDoc.setDocDate(new Date(ListElement.lastModified()));
+    NewDoc.setParentId(ParentId);
+    Res=TitleDoc.get(ListElement.getName());
+    if (Res==null)
+        NewDoc.insert();  
+    else
+        {
+        Date InsDate=(Date)Res.getAttr(PDDocs.fPDDATE).getValue();
+        if (InsDate.before(new Date(ListElement.lastModified())))
+            {
+            NewDoc.setPDId((String)Res.getAttr(PDDocs.fPDID).getValue());
+            NewDoc.Checkout();
+            NewDoc.LoadFull((String)Res.getAttr(PDDocs.fPDID).getValue());
+            NewDoc.setTitle(ListElement.getName());
+            NewDoc.setFile(ListElement.getAbsolutePath());
+            NewDoc.setDocDate(new Date(ListElement.lastModified()));
+            NewDoc.setParentId(ParentId);
+            NewDoc.update();
+            NewDoc.Checkin(Long.toString(ListElement.lastModified()));
+            }
+        }
+    }
+ListOrigin=null; // to help gc and save memory during recursivity
+PDFolders Targ=new PDFolders(getDrv());
+HashSet<String> listDirectDescendList = Targ.getListDirectDescendList(ParentId);
+HashMap<String, String> Titles=new HashMap(listDirectDescendList.size());
+for (Iterator<String> iterator = listDirectDescendList.iterator(); iterator.hasNext();)
+    {
+    String FoldId = iterator.next(); 
+    Targ.Load(FoldId);
+    boolean Deleted=true;
+    for (int i = 0; i < DirList.size(); i++)
+        {
+        File SubDir = (File) DirList.get(i);
+        if (SubDir.getName().equalsIgnoreCase(Targ.getTitle()))
+            {
+            Deleted=false;
+            break;
+            }  
+        }
+    if (Deleted)
+        Targ.delete();
+    else
+        Titles.put(Targ.getTitle(), FoldId);
+    }
+if (Recursive)
+    {
+    for (int i = 0; i < DirList.size(); i++)
+        {
+        File SubDir = (File) DirList.get(i);
+        String FId=Titles.get(SubDir.getName());
+        if (FId==null || FId.length()==0)
+            {
+            PDFolders f=new PDFolders(getDrv(), getObjType());
+            f.setTitle(SubDir.getName());
+            f.setParentId(ParentId);
+            f.insert();
+            FId=f.getPDId();
+            }
+        LocalSync(DefDocType, FId, SubDir.getAbsolutePath(), Recursive);    
+        }
+    }
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.LocalSync <"+getPDId());
+}
+//-------------------------------------------------------------------------
+/**
+ * 
+ * @throws PDException in any error 
+ */
+private void Export() throws PDException
+{
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.Export >"+getPDId());
+PDFolders F2Exp=new PDFolders(this.getDrv());
+Cursor CursorId=null;
+try {
+if (isTransact())  
+    getDrv().IniciarTrans();
+String Id=null;      
+//File Path=new File(getParam4());
+CursorId=this.GenCur();    
+Record Res=getDrv().NextRec(CursorId);
+while (Res!=null)
+    {
+    try {
+    F2Exp.assignValues(Res);    
+    F2Exp.ExportPath(getParam3(), getParam4());   
+    } catch (Exception ex)
+        {
+        if (isTransact())    
+            PDException.GenPDException(ex.getMessage(), Id);
+        else    
+            PDLog.Error("PDTasksExec.Export:"+ex.getLocalizedMessage());
+
+        }
+    Res=getDrv().NextRec(CursorId);
+    }
+getDrv().CloseCursor(CursorId);
+getDrv().CerrarTrans();
+} catch (PDException ex)
+    {
+    if (CursorId!=null)    
+        getDrv().CloseCursor(CursorId);
+    getDrv().AnularTrans();
+    PDLog.Error("PDTasksExec.Export:"+ex.getLocalizedMessage());
+    }
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.Export <"+getPDId());
+}
+//-------------------------------------------------------------------------
+/**
+ * Deletes old folders.
+ * Param -> boolean 0/1 indcate Subtypes.
+ * Param2 -> Integer indicates number of days
+ * Param3 -> PDID Folder
+ * @throws PDException in any error 
+ */
+private void DeleteOldFold() throws PDException
+{
+if (PDLog.isInfo())
+    PDLog.Info("PDTasksExec.DeleteOldFold >"+getPDId());
+PDFolders F=new PDFolders(this.getDrv());
+Cursor CursorId=null;
+try {
+if (isTransact())  
+    getDrv().IniciarTrans();
+CursorId=CurDeleteOldFold();
+Record Res=getDrv().NextRec(CursorId);
+boolean PrevDeleted;
+while (Res!=null)
+    {
+    F.assignValues(Res);
+    try {
+    F.Load((String)Res.getAttr(PDFolders.fPDID ).getValue());
+    PrevDeleted=false;
+    } catch (Exception ex) // control of sinultaneous delete or deleting of folders before subfolders
+        {
+        PrevDeleted=true;
+        }
+    if (!PrevDeleted)
+        {
+        try {
+        F.delete(); 
+        } catch (Exception ex)
+            {
+            if (isTransact())    
+                PDException.GenPDException(ex.getMessage(), F.getPDId());
+            else    
+                PDLog.Error("PDTasksExec.DeleteOldFold:"+ex.getLocalizedMessage());
+            }
+        }
+    Res=getDrv().NextRec(CursorId);
+    }
+getDrv().CloseCursor(CursorId);
+getDrv().CerrarTrans();
+} catch (Exception ex)
+    {
+    if (CursorId!=null)    
+        getDrv().CloseCursor(CursorId);
+    getDrv().AnularTrans();
+    PDLog.Error("PDTasksExec.DeleteOldFold:"+ex.getLocalizedMessage());
+    }
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.DeleteOldFold >"+getPDId());
+}
+//-------------------------------------------------------------------------
+/**
+ * Common method to simulate affected elements 
+ * @return 
+ */
+private Cursor CurDeleteOldFold() throws PDException
+{
+boolean SubTypes;
+if (getParam()==null || getParam().length()==0 || getParam().charAt(0)=='0')
+    SubTypes=false;
+else
+    SubTypes=true;
+PDFolders F=new PDFolders(this.getDrv());
+String FoldType;
+if ("*".equals(getObjType()))
+    FoldType=PDFolders.getTableName();
+else
+    FoldType=getObjType();
+Calendar Date2Del=Calendar.getInstance();
+Date2Del.setTime(getNextDate());
+Date2Del.add(Calendar.DAY_OF_MONTH, -Integer.parseInt(getParam2()));
+Attribute Attr=F.getRecord().getAttr(PDFolders.fPDDATE);
+Attr.setValue(Date2Del.getTime());
+Condition c=new Condition(Attr, Condition.cLET);
+Conditions Conds=new Conditions();
+Conds.addCondition(c);
+String IdAct=F.getIdPath(getParam3());
+return(F.Search(FoldType,  Conds, SubTypes, true, IdAct, null))  ;
+}
+//-------------------------------------------------------------------------
+/**
+ * Deletes old folders.
+ * Param -> boolean 0/1 indcate Subtypes.
+ * Param2 -> Integer indicates number of days
+ * Param3 -> PDID Folder
+ * @throws PDException  in any error
+ */
+private void DeleteOldDoc() throws PDException
+{
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.DeleteOldDoc >"+getPDId());
+PDDocs D=new PDDocs(this.getDrv());
+Cursor CursorId=null;
+try {
+if (isTransact())  
+    getDrv().IniciarTrans();
+CursorId=this.GenCur();    
+Record Res=getDrv().NextRec(CursorId);
+while (Res!=null)
+    {
+    D.assignValues(Res);
+    try {
+    D.delete(); 
+    } catch (Exception ex)
+        {
+        PDLog.Error("PDTasksExec.DeleteOldDoc:"+ex.getLocalizedMessage());
+        }
+    Res=getDrv().NextRec(CursorId);
+    }
+getDrv().CloseCursor(CursorId);
+getDrv().CerrarTrans();
+} catch (Exception ex)
+    {
+    if (CursorId!=null)    
+        getDrv().CloseCursor(CursorId);
+    getDrv().AnularTrans();
+    PDLog.Error("PDTasksExec.DeleteOldDoc:"+ex.getLocalizedMessage());
+    }
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.DeleteOldDoc >"+getPDId());
+}
+//-------------------------------------------------------------------------
+private Cursor CurPurgeDoc() throws PDException
+{
+String DocType;
+if ("*".equals(getObjType()))
+    DocType=PDFolders.getTableName();
+else
+    DocType=getObjType();
+PDDocs Doc=new PDDocs(this.getDrv());
+Calendar Date2Del=Calendar.getInstance();
+Date2Del.setTime(new Date());
+Date2Del.add(Calendar.DAY_OF_MONTH, -Integer.parseInt(getParam2()));
+return(Doc.ListDeletedBefore(DocType, Date2Del.getTime()));
+}
+//-------------------------------------------------------------------------
+private Cursor CurExport() throws PDException
+{
+boolean SubTypes;
+if (getParam()==null || getParam().length()==0 || getParam().charAt(0)=='0')
+    SubTypes=false;
+else
+    SubTypes=true;
+PDFolders F=new PDFolders(this.getDrv());
+String FoldType;
+if ("*".equals(getObjType()))
+    FoldType=PDFolders.getTableName();
+else
+    FoldType=getObjType();
+Calendar Date2Del=Calendar.getInstance();
+Date2Del.setTime(getNextDate());
+Date2Del.add(Calendar.DAY_OF_MONTH, -Integer.parseInt(getParam2()));
+Attribute Attr=F.getRecord().getAttr(PDFolders.fPDDATE);
+Attr.setValue(Date2Del.getTime());
+Condition c=new Condition(Attr, Condition.cGET);
+Conditions Conds=new Conditions();
+Conds.addCondition(c);
+String IdAct=F.getIdPath(getParam3());
+return(F.Search(FoldType,  Conds, SubTypes, true, IdAct, null))  ;
+}
+//-------------------------------------------------------------------------
+
+private Cursor CurDeleteOldDoc() throws PDException
+{
+boolean SubTypes;
+if (getParam()==null || getParam().length()==0 || getParam().charAt(0)=='0')
+    SubTypes=false;
+else
+    SubTypes=true;
+PDDocs Doc=new PDDocs(this.getDrv());
+String DocType;
+if ("*".equals(getObjType()))
+    DocType=PDFolders.getTableName();
+else
+    DocType=getObjType();
+Calendar Date2Del=Calendar.getInstance();
+Date2Del.setTime(getNextDate());
+Date2Del.add(Calendar.DAY_OF_MONTH, -Integer.parseInt(getParam2()));
+Attribute Attr=Doc.getRecord().getAttr(PDDocs.fPDDATE);
+Attr.setValue(Date2Del.getTime());
+Condition c=new Condition(Attr, Condition.cLET);
+Conditions Conds=new Conditions();
+Conds.addCondition(c);
+PDFolders F=new PDFolders(getDrv());
+String IdAct=F.getIdPath(getParam3());
+Doc.setLimitedResults(false);
+return(Doc.Search(DocType, Conds, SubTypes, true, false, IdAct, null))  ;
+}
+//-------------------------------------------------------------------------
+/**
+ * Search for the documents included in the report condition and creates a cursor
+ * @return the cursor with documents
+ * @throws PDException in any error
+ */
+private Cursor CurDocsReport() throws PDException
+{
+boolean SubTypes;
+if (getParam()==null || getParam().length()==0 || getParam().charAt(0)=='0')
+    SubTypes=false;
+else
+    SubTypes=true;
+PDDocs Doc=new PDDocs(this.getDrv());
+String DocType;
+if ("*".equals(getObjType()))
+    DocType=PDFolders.getTableName();
+else
+    DocType=getObjType();
+Calendar Date2Del=Calendar.getInstance();
+Date2Del.setTime(getNextDate());
+String FirstDay="0";
+String LastDay="0";
+StringTokenizer St=new StringTokenizer(getParam2(), Attribute.StringListSeparator);
+try {
+FirstDay=St.nextToken();
+LastDay=St.nextToken();
+} catch (Exception ex)
+    { // no values or correct values introduced yet
+    }
+Date2Del.add(Calendar.DAY_OF_MONTH, -Integer.parseInt(FirstDay));
+Attribute Attr=Doc.getRecord().getAttr(PDDocs.fPDDATE);
+Attr.setValue(Date2Del.getTime());
+Condition c=new Condition(Attr, Condition.cGET);
+Conditions Conds=new Conditions();
+Conds.addCondition(c);
+Date2Del.setTime(getNextDate());
+Date2Del.add(Calendar.DAY_OF_MONTH, -Integer.parseInt(LastDay));
+Attribute Attr2=Doc.getRecord().getAttr(PDDocs.fPDDATE).Copy();
+Attr2.setValue(Date2Del.getTime());
+Condition c2=new Condition(Attr2, Condition.cLET);
+Conds.addCondition(c2);
+PDFolders F=new PDFolders(getDrv());
+String IdAct=F.getIdPath(getParam4());
+Doc.setLimitedResults(false);
+return(Doc.Search(DocType, Conds, SubTypes, true, false, IdAct, null))  ;
+}
+//-------------------------------------------------------------------------
+private Cursor CurCustom() throws PDException
+{
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.CurCustom>:"); 
+String[] Params = getDescription().split("\\|");
+String PDIdT=Params[0];
+String ClassName=Params[1];
+CustomTask Cust=new CustomTask(getDrv(), PDIdT, ClassName);
+return(Cust.CurCustom(getDrv(), getObjType(), getObjFilter(), getParam(), getParam2(), getParam3(), getParam4()));            
+}
+//-------------------------------------------------------------------------
+/**
+ * Search for the folders included in the report condition and creates a cursor
+ * @return the cursor with folders
+ * @throws PDException in any error
+ */
+//-------------------------------------------------------------------------
+private Cursor CurFoldsReport() throws PDException
+{
+boolean SubTypes;
+if (getParam()==null || getParam().length()==0 || getParam().charAt(0)=='0')
+    SubTypes=false;
+else
+    SubTypes=true;
+PDFolders Fold=new PDFolders(this.getDrv());
+String FoldType;
+if ("*".equals(getObjType()))
+    FoldType=PDFolders.getTableName();
+else
+    FoldType=getObjType();
+Calendar Date2Del=Calendar.getInstance();
+Date2Del.setTime(getNextDate());
+String FirstDay="0";
+String LastDay="0";
+StringTokenizer St=new StringTokenizer(getParam2(), Attribute.StringListSeparator);
+try {
+FirstDay=St.nextToken();
+LastDay=St.nextToken();
+} catch (Exception ex)
+    { // no values or correct values introduced yet
+    }
+Date2Del.add(Calendar.DAY_OF_MONTH, -Integer.parseInt(FirstDay));
+Attribute Attr=Fold.getRecord().getAttr(PDDocs.fPDDATE);
+Attr.setValue(Date2Del.getTime());
+Condition c=new Condition(Attr, Condition.cGET);
+Conditions Conds=new Conditions();
+Conds.addCondition(c);
+Date2Del.setTime(getNextDate());
+Date2Del.add(Calendar.DAY_OF_MONTH, -Integer.parseInt(LastDay));
+Attribute Attr2=Fold.getRecord().getAttr(PDDocs.fPDDATE).Copy();
+Attr2.setValue(Date2Del.getTime());
+Condition c2=new Condition(Attr2, Condition.cLET);
+Conds.addCondition(c2);
+PDFolders F=new PDFolders(getDrv());
+String IdAct=F.getIdPath(getParam4());
+return(Fold.Search(FoldType, Conds, SubTypes, true, IdAct, null));
+}
+//-------------------------------------------------------------------------
+/**
+ * @return the NextDate
+ */
+public Date getNextDate()
+{
+return NextDate;
+}
+//-------------------------------------------------------------------------
+/**
+ * @param NextDate the NextDate to set
+ */
+public void setNextDate(Date NextDate)
+{
+this.NextDate = NextDate;
+}
+//-------------------------------------------------------------------------
+/**
+ * Generates the default conditions that is PDID=current PDID
+ * @return Conditions containing 1 condition
+ * @throws PDException in any error
+ */
+protected Conditions getConditions() throws PDException
+{
+Conditions ListCond=new Conditions();
+ListCond.addCondition(new Condition(fPDID, Condition.cEQUAL, getPDId()));
+return(ListCond);
+}
+//-------------------------------------------------------------------------
+/**
+ * Generates a Task from the definition and the actual Folder
+ * @param pTask Taks definition
+ * @param pFold Folder
+ */
+void GenFromDef(PDTasksDefEvent pTask, PDFolders pFold) throws PDException
+{
+super.assignValues(pTask.getRecord());
+setPDId(GenerateId());
+this.setObjFilter(pFold.getPDId());
+this.setObjType(pFold.getFolderType());
+}
+//-------------------------------------------------------------------------
+/**
+ * Generates a Task from the definition and the actual Folder
+ * @param pTask Taks definition
+ * @param pDoc Folder
+ */
+void GenFromDef(PDTasksDefEvent pTask, PDDocs pDoc) throws PDException
+{
+super.assignValues(pTask.getRecord());
+setPDId(GenerateId());
+this.setObjFilter(pDoc.getPDId());
+this.setObjType(pDoc.getDocType());
+}
+//-------------------------------------------------------------------------
+/**
+ * 
+ * @throws PDException in any error
+ */
+private void ExecuteUpdFold() throws PDException
+{
+PDFolders Fold=new PDFolders(this.getDrv(), getObjType());
+Fold.LoadFull(getObjFilter());
+String IdUnder=Fold.getIdPath(getParam4());
+if (!Fold.IsUnder(IdUnder))    
+   return; 
+Record r=Fold.getRecSum();
+Record rParent=null;
+HashMap<String, String> ListThes=null;
+if (getParam().indexOf(ObjPD.SYN_PARENT)!=-1 || getParam2().indexOf(ObjPD.SYN_PARENT)!=-1 || getParam3().indexOf(ObjPD.SYN_PARENT)!=-1)
+    {
+    PDFolders FoldP=new PDFolders(getDrv());
+    FoldP.LoadFull(Fold.getParentId());
+    rParent=FoldP.getRecSum();
+    }
+if (getParam().indexOf(ObjPD.SYN_THES)!=-1 || getParam2().indexOf(ObjPD.SYN_THES)!=-1 || getParam3().indexOf(ObjPD.SYN_THES)!=-1)
+    {
+    ListThes=new HashMap();
+    PDThesaur T=new PDThesaur(getDrv());
+    r.initList();
+    for (int i = 0; i < r.NumAttr(); i++)
+        {
+        Attribute Attr = r.nextAttr();
+        if (Attr.getType()==Attribute.tTHES && Attr.getValue()!=null && ((String)Attr.getValue()).length()!=0)
+            {
+            T.Load((String)Attr.getValue());
+            ListThes.put(Attr.getName(), T.getName());
+            }
+        }
+    }
+r=Update(getParam(), r, rParent, ListThes);
+if (getParam2()!=null && getParam2().length()!=0)
+    r=Update(getParam2(), r, rParent, ListThes);
+if (getParam3()!=null && getParam2().length()!=0)
+    r=Update(getParam3(), r, rParent, ListThes);
+Fold.assignValues(r);
+Fold.MonoUpdate();
+}
+//-------------------------------------------------------------------------
+/**
+ * 
+ * @throws PDException in any error 
+ */
+private void ExecuteCopyFold() throws PDException
+{
+PDFolders Fold=new PDFolders(this.getDrv(), getObjType());
+Fold.LoadFull(getObjFilter());
+if (Fold.getIdPath(getParam()).equals(Fold.getParentId())) // to avoid "recursivity"
+    return;
+String IdUnder=Fold.getIdPath(getParam2());
+if (!Fold.IsUnder(IdUnder))    
+   return; 
+PDFolders f=new PDFolders(Fold.getDrv(), Fold.getFolderType());
+f.assignValues(Fold.getRecSum());
+f.setPDId(null);
+f.setParentId(Fold.getIdPath(getParam()));
+f.insert();
+}
+//-------------------------------------------------------------------------
+/**
+ * 
+ * @throws PDException in any error 
+ */
+private void ExecuteExportFold() throws PDException
+{
+PDFolders Fold=new PDFolders(this.getDrv(), getObjType());
+Fold.LoadFull(getObjFilter());
+String IdUnder=Fold.getIdPath(getParam());
+if (!Fold.IsUnder(IdUnder))    
+   return; 
+try {
+Fold.ExportPath(Fold.getPDId(), getParam2());
+} catch (Exception ex)
+    {
+    PDException.GenPDException("Error_Exporting_Folder", ex.getLocalizedMessage());
+    }
+}
+//-------------------------------------------------------------------------
+/**
+ * Generates a document html with the document included in the conditioos of the task
+ * and stores in personal folder of the users of the groups
+ * @throws PDException in any error
+ */
+private void DocsReport() throws PDException
+{
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.DocsReport >"+getPDId());
+PDDocs D=new PDDocs(this.getDrv());
+Cursor CursorId=null;
+Cursor CurUsers=null;
+PrintWriter FRepDoc = null;
+File f=null;
+String TempName;
+try {
+TempName = System.getProperty("java.io.tmpdir");
+if (!TempName. endsWith(File.separator))
+    TempName+=File.separator;
+TempName+=getName()+".html";
+FRepDoc = new PrintWriter(TempName, "UTF-8");
+FRepDoc.println("<!DOCTYPE html>\n" +
+"<html>\n" +
+"    <head>\n" +
+"        <title>OpenProdoc:"+getName()+"</title>\n" +
+"        <meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">\n" +
+"    </head>\n" +
+"    <body>");
+FRepDoc.println("<H4>"+getDescription()+" "+new Date()+"</H4><hr>");
+CursorId=this.GenCur();    
+Record Res=getDrv().NextRec(CursorId);
+while (Res!=null)
+    {
+    D.assignValues(Res);
+    D.LoadFull(D.getPDId());
+    FRepDoc.println(D.toHtml());
+    Res=getDrv().NextRec(CursorId);
+    }
+getDrv().CloseCursor(CursorId);
+FRepDoc.println("<hr></body>\n" +
+"</html>");
+FRepDoc.close();
+PDGroups g=new PDGroups(getDrv());
+CurUsers=g.ListUsers(getParam3());
+Record r=getDrv().NextRec(CurUsers);
+while (r!=null)
+    {
+    Attribute Attr=r.getAttr(PDGroups.fUSERNAME);
+    PDDocs DocNews=new PDDocs(getDrv());
+    DocNews.setTitle(this.getDescription());
+    DocNews.setDocDate(new Date());
+    DocNews.setFile(TempName);
+    DocNews.setParentId(PDFolders.USERSFOLDER+"/"+Attr.getValue());
+    DocNews.insert();
+    r=getDrv().NextRec(CurUsers);
+    }
+f=new File(TempName);
+f.delete();
+} catch (Exception ex)
+    {
+    if (CursorId!=null)    
+        getDrv().CloseCursor(CursorId);
+    if (CurUsers!=null)    
+        getDrv().CloseCursor(CurUsers);
+    if (FRepDoc!=null)
+        FRepDoc.close();
+    if (f!=null && f.exists())
+        f.delete();
+    PDException.GenPDException("PDTasksExec.DocsReport:",ex.getLocalizedMessage());
+    }
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.DocsReport >"+getPDId());
+}
+//-------------------------------------------------------------------------
+/**
+ * Generates a document html with the document included in the conditioos of the task
+ * and stores in personal folder of the users of the groups
+ * @throws PDException in any error
+ */
+private void FoldsReport() throws PDException
+{
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.FoldsReport >"+getPDId());
+PDFolders Fold=new PDFolders(this.getDrv());
+Cursor CursorId=null;
+Cursor CurUsers=null;
+PrintWriter FRepDoc = null;
+File f=null;
+String TempName;
+try {
+TempName = System.getProperty("java.io.tmpdir");
+if (!TempName. endsWith(File.separator))
+    TempName+=File.separator;
+TempName+=getName()+".html";
+FRepDoc = new PrintWriter(TempName, "UTF-8");
+FRepDoc.println("<!DOCTYPE html>\n" +
+"<html>\n" +
+"    <head>\n" +
+"        <title>OpenProdoc:"+getName()+"</title>\n" +
+"        <meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">\n" +
+"    </head>\n" +
+"    <body>");
+FRepDoc.println("<H4>"+getDescription()+" "+new Date()+"</H4><hr>");
+CursorId=this.GenCur();    
+Record Res=getDrv().NextRec(CursorId);
+while (Res!=null)
+    {
+    Fold.assignValues(Res);
+    Fold.LoadFull(Fold.getPDId());
+    FRepDoc.println(Fold.toHtml());
+    Res=getDrv().NextRec(CursorId);
+    }
+getDrv().CloseCursor(CursorId);
+FRepDoc.println("<hr></body>\n" +
+"</html>");
+FRepDoc.close();
+PDGroups g=new PDGroups(getDrv());
+CurUsers=g.ListUsers(getParam3());
+Record r=getDrv().NextRec(CurUsers);
+while (r!=null)
+    {
+    Attribute Attr=r.getAttr(PDGroups.fUSERNAME);
+    PDDocs DocNews=new PDDocs(getDrv());
+    DocNews.setTitle(this.getDescription());
+    DocNews.setDocDate(new Date());
+    DocNews.setFile(TempName);
+    DocNews.setParentId(PDFolders.USERSFOLDER+"/"+Attr.getValue());
+    DocNews.insert();
+    r=getDrv().NextRec(CurUsers);
+    }
+f=new File(TempName);
+f.delete();
+} catch (Exception ex)
+    {
+    if (CursorId!=null)    
+        getDrv().CloseCursor(CursorId);
+    if (CurUsers!=null)    
+        getDrv().CloseCursor(CurUsers);
+    if (FRepDoc!=null)
+        FRepDoc.close();
+    if (f!=null && f.exists())
+        f.delete();
+    PDException.GenPDException("PDTasksExec.FoldsReport:",ex.getLocalizedMessage());
+    }
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.FoldsReport >"+getPDId());
+}
+//-------------------------------------------------------------------------
+
+private void ExecuteUpdDoc() throws PDException
+{
+PDDocs Doc=new PDDocs(this.getDrv(), getObjType());
+Doc.LoadFull(getObjFilter());    
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.ExecuteUpdDoc>:"+Doc.getPDId()+"/"+Doc.getTitle());            
+PDFolders Fold=new PDFolders(getDrv());
+String IdUnder=Fold.getIdPath(getParam4());
+Fold.setPDId(Doc.getParentId());
+if (!Fold.IsUnder(IdUnder))    
+   return; 
+Record r=Doc.getRecSum();
+Record rParent=null;
+HashMap<String, String> ListThes=null;
+if (getParam().indexOf(ObjPD.SYN_PARENT)!=-1 || getParam2().indexOf(ObjPD.SYN_PARENT)!=-1 || getParam3().indexOf(ObjPD.SYN_PARENT)!=-1)
+    {
+    Fold.LoadFull(Doc.getParentId());
+    rParent=Fold.getRecSum();
+    }
+if (getParam().indexOf(ObjPD.SYN_THES)!=-1 || getParam2().indexOf(ObjPD.SYN_THES)!=-1 || getParam3().indexOf(ObjPD.SYN_THES)!=-1)
+    {
+    ListThes=new HashMap();
+    PDThesaur T=new PDThesaur(getDrv());
+    r.initList();
+    for (int i = 0; i < r.NumAttr(); i++)
+        {
+        Attribute Attr = r.nextAttr();
+        if (Attr.getType()==Attribute.tTHES && Attr.getValue()!=null && ((String)Attr.getValue()).length()!=0)
+            {
+            T.Load((String)Attr.getValue());
+            ListThes.put(Attr.getName(), T.getName());
+            }
+        }
+    }
+r=Update(getParam(), r, rParent, ListThes);
+if (getParam2()!=null && getParam2().length()!=0)
+    r=Update(getParam2(), r, rParent, ListThes);
+if (getParam3()!=null && getParam2().length()!=0)
+    r=Update(getParam3(), r, rParent, ListThes);
+Doc.assignValues(r);
+Doc.updateFragments(r, Doc.getPDId());
+Doc.UpdateVersion(Doc.getPDId(), Doc.getVersion(), r);
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.ExecuteUpdDoc<");            
+}
+//-------------------------------------------------------------------------
+
+private void ExecuteCopyDoc() throws PDException
+{
+PDDocs Doc=new PDDocs(this.getDrv(), getObjType());
+Doc.LoadFull(getObjFilter());  
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.ExecuteCopyDoc>:"+Doc.getPDId()+"/"+Doc.getTitle());                
+PDFolders Fold=new PDFolders(getDrv());
+String IdUnder=Fold.getIdPath(getParam2());
+Fold.setPDId(Doc.getParentId());
+if (!Fold.IsUnder(IdUnder))    
+   return;     
+String FName=null;    
+PDDocs NewDoc=new PDDocs(getDrv(), Doc.getDocType());
+NewDoc.assignValues(Doc.getRecSum());
+NewDoc.setPDId(Doc.GenerateId());
+try {
+FName=Doc.getFile(System.getProperty("java.io.tmpdir"));
+NewDoc.setFile(FName);
+NewDoc.setParentId(Fold.getIdPath(getParam()));
+NewDoc.insert();
+} catch (PDException Ex)
+    {
+    PDException.GenPDException(Ex.getLocalizedMessage(), FName);
+    }
+finally {
+    if (FName!=null)
+        {
+        File f=new File(FName);
+        if (f.exists())
+            f.delete();
+        }
+    }
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.ExecuteCopyDoc<");                
+}
+//-------------------------------------------------------------------------
+
+private void ExecuteExportDoc() throws PDException
+{
+PDDocs Doc=new PDDocs(this.getDrv(), getObjType());
+Doc.LoadFull(getObjFilter()); 
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.ExecuteExportDoc>:"+Doc.getPDId()+"/"+Doc.getTitle());                    
+PDFolders Fold=new PDFolders(getDrv());
+String IdUnder=Fold.getIdPath(getParam());
+Fold.setPDId(Doc.getParentId());
+if (!Fold.IsUnder(IdUnder))    
+   return;  
+Doc.ExportXML(getParam2(), true);
+Doc.getFile(getParam2());
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.ExecuteExportDoc<");                    
+}
+//-------------------------------------------------------------------------
+
+private void ExecuteConvertDoc() throws PDException
+{
+PDDocs Doc=new PDDocs(this.getDrv(), getObjType());
+Doc.LoadFull(getObjFilter());
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.ExecuteConvertDoc>:"+Doc.getPDId()+"/"+Doc.getTitle());                        
+PDFolders Fold=new PDFolders(getDrv());
+String IdUnder=Fold.getIdPath(getParam2());
+Fold.setPDId(Doc.getParentId());
+if (!Fold.IsUnder(IdUnder))    
+   return;     
+String FName=null;    
+String DestName=null;
+PDDocs NewDoc=new PDDocs(getDrv(), Doc.getDocType());
+NewDoc.assignValues(Doc.getRecSum());
+NewDoc.setPDId(Doc.GenerateId());
+try {
+FName=Doc.getFile(System.getProperty("java.io.tmpdir"));
+String Order=getParam3();
+Order=Order.replace("@1", FName);
+DestName=FName.substring(0, FName.lastIndexOf('.')+1)+getParam4();
+Order=Order.replace("@2", DestName);
+Process Proc=Runtime.getRuntime().exec(Order);
+File f=new File(DestName);
+int Res;
+for (int i = 0; i < 30; i++)
+    {
+    Thread.sleep(1000); 
+    try {
+    Res=Proc.exitValue();
+    } catch (IllegalThreadStateException e)
+        {
+        Res=-1111;
+        }
+//    if (!Proc.isAlive())  // deprecated in some Java versions
+    if (Res!=1111)
+        break;
+    }
+NewDoc.setName("");
+NewDoc.setMimeType(null);
+NewDoc.setFile(DestName);
+NewDoc.setParentId(Fold.getIdPath(getParam()));
+NewDoc.insert();
+} catch (Exception Ex)
+    {
+    PDException.GenPDException(Ex.getLocalizedMessage(), FName);
+    }
+finally 
+{
+if (FName!=null)
+    {
+    File f=new File(FName);
+    if (f.exists())
+        f.delete();
+    }
+if (DestName!=null)
+    {
+    File f=new File(DestName);
+    if (f.exists())
+        f.delete();
+    }
+}
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.ExecuteConvertDoc<");                        
+}
+//-------------------------------------------------------------------------
+/**
+ * Checks that the document meets the requirements for creating a non trans taks
+ * @param Doc Doc to check
+ * @return true when de doc meets req.
+ */
+boolean MeetsReq(PDDocs Doc) throws PDException
+{
+PDFolders Fold=new PDFolders(getDrv());
+String IdUnder=PDFolders.ROOTFOLDER;
+switch (getType())
+    {
+    case PDTasksDefEvent.fTASKEVENT_UPDATE_DOC:
+        IdUnder=Fold.getIdPath(getParam4());
+        break;
+    case PDTasksDefEvent.fTASKEVENT_COPY_DOC:
+        IdUnder=Fold.getIdPath(getParam2());
+        break;
+    case PDTasksDefEvent.fTASKEVENT_EXPORT_DOC:
+        IdUnder=Fold.getIdPath(getParam());
+        break;
+    case PDTasksDefEvent.fTASKEVENT_CONVERT_DOC:
+        IdUnder=Fold.getIdPath(getParam2());
+        break;
+    case PDTasksDefEvent.fTASKEVENT_FTINDEX_DOC:
+    case PDTasksDefEvent.fTASKEVENT_FTDEL_DOC:
+    case PDTasksDefEvent.fTASKEVENT_FTUPDA_DOC:
+        IdUnder=Fold.getIdPath(getParam());
+        break;
+    case PDTasksDefEvent.fTASKEVENT_CUSTOM_DOC:
+        return(CustomMeetsReq(Doc.getRecSum().Copy(), getDrv()));
+    }
+Fold.setPDId(Doc.getParentId());
+if (!Fold.IsUnder(IdUnder))    
+   return(false); 
+return(true);
+}
+//-------------------------------------------------------------------------
+/**
+ * Checks that the folder meets the requirements for creating a non trabns taks
+ * @param Fold Fold to check
+ * @return true when de fold meets req.
+ */
+boolean MeetsReq(PDFolders FoldE)  throws PDException
+{
+PDFolders Fold=new PDFolders(getDrv());
+String IdUnder=PDFolders.ROOTFOLDER;    
+switch (getType())
+    {
+    case PDTasksDefEvent.fTASKEVENT_UPDATE_FOLD:
+        IdUnder=Fold.getIdPath(getParam4());
+        break;
+    case PDTasksDefEvent.fTASKEVENT_COPY_FOLD:
+        IdUnder=Fold.getIdPath(getParam2());
+        break;
+    case PDTasksDefEvent.fTASKEVENT_EXPORT_FOLD:
+        IdUnder=Fold.getIdPath(getParam());
+        break;
+    case PDTasksDefEvent.fTASKEVENT_CUSTOM_FOLD:
+        return(CustomMeetsReq(FoldE.getRecSum().Copy(), getDrv()));
+    }
+if (!FoldE.IsUnder(IdUnder))    
+   return(false); 
+return(true);
+}
+//-------------------------------------------------------------------------
+
+private void ExecuteFTIndexDoc() throws PDException
+{
+PDDocs Doc=new PDDocs(this.getDrv(), getObjType());
+Doc.LoadFull(getObjFilter());
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.ExecuteFTIndexDoc>:"+Doc.getPDId()+"/"+Doc.getTitle());                    
+PDFolders Fold=new PDFolders(getDrv());
+String IdUnder=Fold.getIdPath(getParam());
+Fold.setPDId(Doc.getParentId());
+if (!Fold.IsUnder(IdUnder))    
+   return;      
+Doc.ExecuteFTAdd();  
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.ExecuteFTIndexDoc<:"+Doc.getPDId()+"/"+Doc.getTitle());                    
+}
+//-------------------------------------------------------------------------
+private void ExecuteFTUpdDoc() throws PDException
+{
+PDDocs Doc=new PDDocs(this.getDrv(), getObjType());
+Doc.LoadFull(getObjFilter());    
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.ExecuteFTUpdDoc>:"+Doc.getPDId()+"/"+Doc.getTitle());                    
+PDFolders Fold=new PDFolders(getDrv());
+String IdUnder=Fold.getIdPath(getParam());
+Fold.setPDId(Doc.getParentId());
+if (!Fold.IsUnder(IdUnder))    
+   return;          
+Doc.ExecuteFTUpd();   
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.ExecuteFTUpdDoc<:"+Doc.getPDId()+"/"+Doc.getTitle());                    
+}
+//-------------------------------------------------------------------------
+private void ExecuteFTDelDoc() throws PDException
+{
+PDDocs Doc=new PDDocs(this.getDrv(), getObjType());
+Doc.setPDId(getObjFilter());    
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.ExecuteFTDelDoc>:"+Doc.getPDId());                            
+Doc.ExecuteFTDel();  
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.ExecuteFTDelDoc<:"+Doc.getPDId());                    
+}
+//-------------------------------------------------------------------------
+/**
+ *
+ * @param Ident
+ * @throws PDExceptionFunc in any error  
+ */
+@Override
+protected void AsignKey(String Ident) throws PDExceptionFunc
+{
+setPDId(Ident);
+}
+//-------------------------------------------------------------------------
+/**
+* @return the GenAuto
+*/
+protected boolean isGenAuto()
+{
+return GenAuto;
+}
+
+//-------------------------------------------------------------------------
+/**
+     * @param pGenAuto
+*/
+protected void setGenAuto(boolean pGenAuto)
+{
+GenAuto = pGenAuto;
+}
+//-------------------------------------------------------------------------
+@Override
+protected void VerifyAllowedIns() throws PDException
+{
+if (isGenAuto())  
+    return;
+super.VerifyAllowedIns();
+}
+//-------------------------------------------------------------------------
+private boolean CustomMeetsReq(Record Rec, DriverGeneric Drv) throws PDException
+{
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.CustomMeetsReq>:"+Rec); 
+String[] Params = getDescription().split("\\|");
+String PDIdT=Params[0];
+String ClassName=Params[1];
+CustomTask Cust=new CustomTask(getDrv(), PDIdT, ClassName);
+return(Cust.CustomMeetsReq(getParam(), getParam2(), getParam3(), getParam4(), Rec, Drv));            
+}
+//-------------------------------------------------------------------------
+private void ExecuteCustomDoc() throws PDException
+{
+PDDocs Doc=new PDDocs(this.getDrv(), getObjType());
+Doc.LoadFull(getObjFilter());      
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.ExecuteCustomDoc>:"+Doc.getPDId()); 
+String[] Params = getDescription().split("\\|");
+String PDId=Params[0];
+String ClassName=Params[1];
+CustomTask Cust=new CustomTask(getDrv(), PDId, ClassName);
+Cust.ExecuteEvent(getParam(), getParam2(), getParam3(), getParam4(), Doc);
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.ExecuteCustomDoc<:"+Doc.getPDId());                    
+}
+//-------------------------------------------------------------------------
+private void ExecuteCustomFold() throws PDException
+{
+PDFolders Fold=new PDFolders(this.getDrv(), getObjType());
+Fold.LoadFull(getObjFilter());
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.ExecuteCustomFold>:"+Fold.getPDId()); 
+String[] Params = getDescription().split("\\|");
+String PDId=Params[0];
+String ClassName=Params[1];
+CustomTask Cust=new CustomTask(getDrv(), PDId, ClassName);
+Cust.ExecuteEvent(getParam(), getParam2(), getParam3(), getParam4(), Fold);
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.ExecuteCustomFold<:"+Fold.getPDId());                    
+}
+//-------------------------------------------------------------------------
+private void ExecuteCustomCron() throws PDException
+{
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.ExecuteCustomCron>"); 
+String[] Params = getDescription().split("\\|");
+String PDId=Params[0];
+String ClassName=Params[1];
+CustomTask Cust=new CustomTask(getDrv(), PDId, ClassName);
+Cust.ExecuteCustomCron(getDrv(), getObjType(), getObjFilter(), getParam(), getParam2(), getParam3(), getParam4());
+if (PDLog.isDebug())
+    PDLog.Debug("PDTasksExec.ExecuteCustomCron<");                    
+}
+//-------------------------------------------------------------------------    
+}

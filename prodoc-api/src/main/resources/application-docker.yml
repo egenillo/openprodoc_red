@@ -1,0 +1,59 @@
+# Docker Profile Configuration
+spring:
+  profiles: docker
+
+# OpenProdoc Docker Settings
+openprodoc:
+  database:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://postgres:5432/openprodoc
+    username: ${DB_USERNAME:openprodoc}
+    password: ${DB_PASSWORD:openprodoc}
+    max-pool-size: ${DB_MAX_POOL_SIZE:15}
+    min-idle: ${DB_MIN_IDLE:3}
+  
+  storage:
+    type: ${STORAGE_TYPE:FILESYSTEM}
+    path: ${STORAGE_PATH:/app/storage}
+    s3-bucket: ${S3_BUCKET:}
+    s3-region: ${S3_REGION:us-east-1}
+  
+  security:
+    auth-type: ${AUTH_TYPE:OPD}
+    session-timeout: ${SESSION_TIMEOUT:3600}
+    jwt-secret: ${JWT_SECRET:docker-default-secret-change-me}
+  
+  fulltext:
+    engine: ${FULLTEXT_ENGINE:LUCENE}
+    index-path: ${FULLTEXT_INDEX_PATH:/app/lucene}
+
+# Docker logging (JSON format for container logs)
+logging:
+  level:
+    root: ${LOG_LEVEL_ROOT:INFO}
+    org.openprodoc: ${LOG_LEVEL_APP:INFO}
+    prodoc: ${LOG_LEVEL_PRODOC:INFO}
+    org.springframework: ${LOG_LEVEL_SPRING:WARN}
+    org.springframework.web: ${LOG_LEVEL_WEB:INFO}
+
+# Docker-specific settings
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: always
+
+server:
+  port: 8080
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 10
+    connection-timeout: 20000
+  compression:
+    enabled: true

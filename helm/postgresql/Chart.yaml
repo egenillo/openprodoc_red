@@ -3,7 +3,7 @@ name: openprodoc-postgresql
 description: PostgreSQL Database for OpenProdoc ECM System
 type: application
 version: 1.0.0
-appVersion: "14"
+appVersion: "16"
 
 keywords:
   - postgresql

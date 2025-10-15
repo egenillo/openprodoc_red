@@ -19,6 +19,12 @@ This guide covers deploying OpenProdoc Enterprise Content Management system usin
 - **Helm 3.x** - Package manager for Kubernetes
 - **Docker** (optional) - Only needed for K3d image import
 
+### Required Database
+
+- **Postgres Database** A Postgres instance is required for openprodoc database deployment
+- **Database instance** Postgres DB must contain a database for openprodoc deployment
+- **Database admin user** Postgres DB must contain a user with admin permissions for the openprodoc defined database 
+
 ### Check Prerequisites
 
 ```bash

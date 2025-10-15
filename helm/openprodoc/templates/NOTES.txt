@@ -37,8 +37,3 @@ Storage Configuration:
   {{- end }}
 
 {{- end }}
-
-For more information:
-  - Documentation: https://github.com/yourusername/openprodoc-red
-  - Issues: https://github.com/yourusername/openprodoc-red/issues
-  - OpenProdoc Official: http://openprodoc.org

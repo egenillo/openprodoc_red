@@ -1,0 +1,168 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "openprodoc.fullname" . }}-core-engine
+  labels:
+    {{- include "openprodoc.coreEngine.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.coreEngine.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "openprodoc.coreEngine.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        {{- with .Values.coreEngine.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "openprodoc.coreEngine.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "openprodoc.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.coreEngine.podSecurityContext | nindent 8 }}
+      initContainers:
+      - name: wait-for-postgres
+        image: postgres:14-alpine
+        command:
+        - sh
+        - -c
+        - |
+          until pg_isready -h {{ .Values.coreEngine.config.database.host }} -p {{ .Values.coreEngine.config.database.port }} -U {{ .Values.coreEngine.config.database.user }}; do
+            echo "Waiting for postgres..."
+            sleep 2
+          done
+        env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openprodoc-secrets
+              key: db-password
+      containers:
+      - name: core-engine
+        securityContext:
+          {{- toYaml .Values.coreEngine.securityContext | nindent 12 }}
+        image: "{{ .Values.coreEngine.image.registry }}{{ if .Values.coreEngine.image.registry }}/{{ end }}{{ .Values.coreEngine.image.repository }}:{{ .Values.coreEngine.image.tag }}"
+        imagePullPolicy: {{ .Values.coreEngine.image.pullPolicy }}
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        env:
+        # Database configuration
+        - name: DB_TYPE
+          value: {{ .Values.coreEngine.config.database.type | quote }}
+        - name: DB_HOST
+          value: {{ .Values.coreEngine.config.database.host | quote }}
+        - name: DB_PORT
+          value: {{ .Values.coreEngine.config.database.port | quote }}
+        - name: DB_NAME
+          value: {{ .Values.coreEngine.config.database.name | quote }}
+        - name: DB_USER
+          value: {{ .Values.coreEngine.config.database.user | quote }}
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openprodoc-secrets
+              key: db-password
+        - name: DB_JDBC_CLASS
+          value: {{ .Values.coreEngine.config.database.jdbcClass | quote }}
+        - name: DB_JDBC_URL_TEMPLATE
+          value: {{ .Values.coreEngine.config.database.jdbcUrlTemplate | quote }}
+        - name: JDBC_DRIVER_PATH
+          value: {{ .Values.coreEngine.config.database.jdbcDriverPath | quote }}
+
+        # Installation settings
+        - name: INSTALL_ON_STARTUP
+          value: {{ .Values.coreEngine.config.install.enabled | quote }}
+        - name: ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openprodoc-secrets
+              key: root-password
+        - name: DEFAULT_LANG
+          value: {{ .Values.coreEngine.config.install.defaultLang | quote }}
+        - name: TIMESTAMP_FORMAT
+          value: {{ .Values.coreEngine.config.install.timestampFormat | quote }}
+        - name: DATE_FORMAT
+          value: {{ .Values.coreEngine.config.install.dateFormat | quote }}
+        - name: MAIN_KEY
+          valueFrom:
+            secretKeyRef:
+              name: openprodoc-secrets
+              key: main-key
+
+        # Repository configuration
+        - name: REPO_NAME
+          value: {{ .Values.coreEngine.config.repository.name | quote }}
+        - name: REPO_ENCRYPT
+          value: {{ .Values.coreEngine.config.repository.encrypt | quote }}
+        - name: REPO_URL
+          value: {{ .Values.coreEngine.config.repository.url | quote }}
+        - name: REPO_USER
+          value: {{ .Values.coreEngine.config.repository.user | quote }}
+        - name: REPO_PASSWORD
+          value: {{ .Values.coreEngine.config.repository.password | quote }}
+        - name: REPO_TYPE
+          value: {{ .Values.coreEngine.config.repository.type | quote }}
+        - name: REPO_PARAM
+          value: {{ .Values.coreEngine.config.repository.param | quote }}
+
+        volumeMounts:
+        {{- if .Values.coreEngine.persistence.enabled }}
+        - name: storage
+          mountPath: {{ .Values.coreEngine.persistence.mountPath }}
+        {{- end }}
+
+        resources:
+          {{- toYaml .Values.coreEngine.resources | nindent 12 }}
+
+        {{- if .Values.coreEngine.livenessProbe.enabled }}
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - "ps aux | grep -v grep | grep -q java"
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        {{- end }}
+
+        {{- if .Values.coreEngine.readinessProbe.enabled }}
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - "ps aux | grep -v grep | grep -q java"
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        {{- end }}
+
+      volumes:
+      {{- if .Values.coreEngine.persistence.enabled }}
+      - name: storage
+        persistentVolumeClaim:
+          claimName: {{ include "openprodoc.fullname" . }}-storage
+      {{- end }}
+
+      {{- with .Values.coreEngine.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.coreEngine.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.coreEngine.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

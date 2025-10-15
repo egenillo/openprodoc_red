@@ -1,0 +1,50 @@
+# Production Environment Override Values
+# Use with: helm install -f values.yaml -f values-production.yaml
+
+# NOTE: PostgreSQL is deployed separately using its own Helm chart
+# Configure PostgreSQL password there, then set it here for OpenProdoc to connect
+
+# REQUIRED: Set these values for production deployment
+coreEngine:
+  image:
+    tag: "1.0.0"  # Use specific version, not latest
+
+  config:
+    database:
+      password: "CHANGE_ME_STRONG_PASSWORD"  # Must match PostgreSQL database password
+
+    install:
+      rootPassword: "CHANGE_ME_ADMIN_PASSWORD"  # OpenProdoc root user password
+      mainKey: "CHANGE_ME_ENCRYPTION_KEY_32CHARS"  # Encryption key for documents
+
+  persistence:
+    size: 500Gi  # Adjust based on expected document volume
+
+  resources:
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+    requests:
+      cpu: 1000m
+      memory: 4Gi
+
+
+ingress:
+  enabled: true
+  hosts:
+    - host: openprodoc.yourdomain.com
+      paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            service:
+              name: core-engine  # Component name (will be prefixed with release name)
+              port:
+                number: 8080
+
+  tls:
+    - secretName: openprodoc-tls-prod
+      hosts:
+        - openprodoc.yourdomain.com
+
+

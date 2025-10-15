@@ -1,0 +1,124 @@
+# PostgreSQL Configuration for OpenProdoc
+# This chart deploys a production-ready PostgreSQL instance
+
+# Image configuration
+image:
+  registry: docker.io
+  repository: library/postgres
+  tag: "16-alpine"
+  pullPolicy: IfNotPresent
+
+# PostgreSQL admin user (postgres superuser)
+auth:
+  # Postgres superuser password
+  postgresPassword: "postgres123"
+
+  # OpenProdoc admin user credentials
+  username: "user1"
+  password: "pass1"
+  database: "prodoc"
+
+# PostgreSQL Configuration
+postgresql:
+  # Maximum connections
+  maxConnections: 200
+
+  # Shared buffers (RAM allocated for caching)
+  sharedBuffers: "1GB"
+
+  # Effective cache size
+  effectiveCacheSize: "3GB"
+
+  # Maintenance work memory
+  maintenanceWorkMem: "256MB"
+
+  # WAL configuration
+  walBuffers: "16MB"
+  minWalSize: "1GB"
+  maxWalSize: "4GB"
+
+  # Query planner
+  defaultStatisticsTarget: 100
+  randomPageCost: 1.1
+  effectiveIoConcurrency: 200
+
+  # Work memory per operation
+  workMem: "5242kB"
+
+# Resource limits and requests
+resources:
+  limits:
+    cpu: 2000m
+    memory: 4Gi
+  requests:
+    cpu: 500m
+    memory: 1Gi
+
+# Persistence configuration
+persistence:
+  enabled: true
+  storageClass: ""  # Use default storage class
+  accessModes:
+    - ReadWriteOnce
+  size: 50Gi
+  annotations: {}
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 5432
+  annotations: {}
+  name: openprodoc-postgresql
+
+# Pod configuration
+podAnnotations: {}
+
+podSecurityContext:
+  fsGroup: 999
+  runAsNonRoot: true
+  runAsUser: 999
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+
+# Liveness and readiness probes
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+  successThreshold: 1
+
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+  successThreshold: 1
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Metrics
+metrics:
+  enabled: false
+  serviceMonitor:
+    enabled: false
+
+# Service Account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""

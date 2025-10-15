@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "postgresql.fullname" . }}-config
+  labels:
+    {{- include "postgresql.labels" . | nindent 4 }}
+data:
+  postgresql.conf: |
+    # PostgreSQL Configuration for OpenProdoc
+    max_connections = {{ .Values.postgresql.maxConnections }}
+    shared_buffers = {{ .Values.postgresql.sharedBuffers }}
+    effective_cache_size = {{ .Values.postgresql.effectiveCacheSize }}
+    maintenance_work_mem = {{ .Values.postgresql.maintenanceWorkMem }}
+    checkpoint_completion_target = 0.9
+    wal_buffers = {{ .Values.postgresql.walBuffers }}
+    default_statistics_target = {{ .Values.postgresql.defaultStatisticsTarget }}
+    random_page_cost = {{ .Values.postgresql.randomPageCost }}
+    effective_io_concurrency = {{ .Values.postgresql.effectiveIoConcurrency }}
+    work_mem = {{ .Values.postgresql.workMem }}
+    min_wal_size = {{ .Values.postgresql.minWalSize }}
+    max_wal_size = {{ .Values.postgresql.maxWalSize }}
+
+  pg_hba.conf: |
+    # PostgreSQL Client Authentication Configuration
+    local   all             all                                     trust
+    host    all             all             127.0.0.1/32            trust
+    host    all             all             ::1/128                 trust
+    host    all             all             all                     md5
+
+  init-user.sh: |
+    #!/bin/bash
+    set -e
+
+    echo "Creating OpenProdoc database and user..."
+
+    # Create user if it doesn't exist
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" <<-EOSQL
+        -- Create user if not exists
+        DO \$\$
+        BEGIN
+          IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '{{ .Values.auth.username }}') THEN
+            CREATE ROLE {{ .Values.auth.username }} WITH LOGIN PASSWORD '{{ .Values.auth.password }}';
+          END IF;
+        END
+        \$\$;
+
+        -- Create database if not exists
+        SELECT 'CREATE DATABASE {{ .Values.auth.database }}'
+        WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ .Values.auth.database }}')
+        \gexec
+
+        -- Grant all privileges
+        GRANT ALL PRIVILEGES ON DATABASE {{ .Values.auth.database }} TO {{ .Values.auth.username }};
+
+        -- Grant superuser privileges to the user (needed for admin operations)
+        ALTER ROLE {{ .Values.auth.username }} WITH SUPERUSER;
+
+        -- Connect to the database and grant schema privileges
+        \c {{ .Values.auth.database }}
+        GRANT ALL ON SCHEMA public TO {{ .Values.auth.username }};
+        GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {{ .Values.auth.username }};
+        GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {{ .Values.auth.username }};
+        ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO {{ .Values.auth.username }};
+        ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO {{ .Values.auth.username }};
+    EOSQL
+
+    echo "OpenProdoc database and user created successfully"

@@ -1,0 +1,498 @@
+{
+  "info": {
+    "name": "OpenProdoc REST API",
+    "description": "Collection of OpenProdoc REST API endpoints for testing and development",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080/ProdocWeb2/APIRest",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.collectionVariables.set('token', jsonData.Token);",
+                  "    console.log('Token saved:', jsonData.Token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"Name\": \"root\",\n  \"Password\": \"admin\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/session",
+              "host": ["{{baseUrl}}"],
+              "path": ["session"]
+            },
+            "description": "Login to OpenProdoc and get JWT token"
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/session",
+              "host": ["{{baseUrl}}"],
+              "path": ["session"]
+            },
+            "description": "Logout and close session"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Folders",
+      "item": [
+        {
+          "name": "Get Folder by Path",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/folders/ByPath/RootFolder",
+              "host": ["{{baseUrl}}"],
+              "path": ["folders", "ByPath", "RootFolder"]
+            },
+            "description": "Get folder information by path"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Folder by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/folders/ById/RootFolder",
+              "host": ["{{baseUrl}}"],
+              "path": ["folders", "ById", "RootFolder"]
+            },
+            "description": "Get folder information by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "List Subfolders by Path",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/folders/SubFoldersByPath/RootFolder?Initial=0&Final=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["folders", "SubFoldersByPath", "RootFolder"],
+              "query": [
+                {
+                  "key": "Initial",
+                  "value": "0"
+                },
+                {
+                  "key": "Final",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "List subfolders under a folder by path"
+          },
+          "response": []
+        },
+        {
+          "name": "List Documents by Path",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/folders/ContDocsByPath/RootFolder?Initial=0&Final=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["folders", "ContDocsByPath", "RootFolder"],
+              "query": [
+                {
+                  "key": "Initial",
+                  "value": "0"
+                },
+                {
+                  "key": "Final",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "List documents contained in a folder"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Folder",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"Name\": \"NewFolder\",\n  \"Idparent\": \"RootFolder\",\n  \"Type\": \"PD_FOLDERS\",\n  \"ACL\": \"Public\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/folders",
+              "host": ["{{baseUrl}}"],
+              "path": ["folders"]
+            },
+            "description": "Create a new folder"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Folder by ID",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"Name\": \"UpdatedFolder\",\n  \"ACL\": \"Private\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/folders/ById/NewFolder",
+              "host": ["{{baseUrl}}"],
+              "path": ["folders", "ById", "NewFolder"]
+            },
+            "description": "Update folder metadata by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Folder by ID",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/folders/ById/NewFolder",
+              "host": ["{{baseUrl}}"],
+              "path": ["folders", "ById", "NewFolder"]
+            },
+            "description": "Delete a folder by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Search Folders",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"Query\": \"Name=\\\"System\\\"\",\n  \"Initial\": 0,\n  \"Final\": 10\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/folders/Search",
+              "host": ["{{baseUrl}}"],
+              "path": ["folders", "Search"]
+            },
+            "description": "Search folders with query"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Documents",
+      "item": [
+        {
+          "name": "Get Document by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/documents/ById/doc-123",
+              "host": ["{{baseUrl}}"],
+              "path": ["documents", "ById", "doc-123"]
+            },
+            "description": "Get document metadata by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Download Document Content",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/documents/ContentById/doc-123",
+              "host": ["{{baseUrl}}"],
+              "path": ["documents", "ContentById", "doc-123"]
+            },
+            "description": "Download document binary content"
+          },
+          "response": []
+        },
+        {
+          "name": "Upload Document",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "Binary",
+                  "type": "file",
+                  "src": [],
+                  "description": "File to upload"
+                },
+                {
+                  "key": "Metadata",
+                  "value": "{\n  \"Name\": \"document.pdf\",\n  \"Idparent\": \"RootFolder\",\n  \"Type\": \"PD_DOCS\",\n  \"Title\": \"My Document\",\n  \"DocDate\": \"2025-10-15\"\n}",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/documents",
+              "host": ["{{baseUrl}}"],
+              "path": ["documents"]
+            },
+            "description": "Upload a new document"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Document",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "Binary",
+                  "type": "file",
+                  "src": [],
+                  "description": "Updated file"
+                },
+                {
+                  "key": "Metadata",
+                  "value": "{\n  \"Title\": \"Updated Document\",\n  \"VerLabel\": \"1.1\"\n}",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/documents/ById/doc-123",
+              "host": ["{{baseUrl}}"],
+              "path": ["documents", "ById", "doc-123"]
+            },
+            "description": "Update document (creates new version)"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Document",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/documents/ById/doc-123",
+              "host": ["{{baseUrl}}"],
+              "path": ["documents", "ById", "doc-123"]
+            },
+            "description": "Delete a document by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Search Documents",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"Query\": \"MimeType=\\\"pdf\\\"\",\n  \"Initial\": 0,\n  \"Final\": 20\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/documents/Search",
+              "host": ["{{baseUrl}}"],
+              "path": ["documents", "Search"]
+            },
+            "description": "Search documents with query"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Thesauri",
+      "item": [
+        {
+          "name": "Get Thesaurus by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/thesauri/ById/thes-001",
+              "host": ["{{baseUrl}}"],
+              "path": ["thesauri", "ById", "thes-001"]
+            },
+            "description": "Get thesaurus by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Thesaurus",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"Name\": \"MyThesaurus\",\n  \"Type\": \"PD_THESAUR\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/thesauri",
+              "host": ["{{baseUrl}}"],
+              "path": ["thesauri"]
+            },
+            "description": "Create a new thesaurus"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

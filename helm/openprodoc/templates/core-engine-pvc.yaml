@@ -1,0 +1,21 @@
+{{- if .Values.coreEngine.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "openprodoc.fullname" . }}-storage
+  labels:
+    {{- include "openprodoc.coreEngine.labels" . | nindent 4 }}
+  {{- with .Values.coreEngine.persistence.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- toYaml .Values.coreEngine.persistence.accessModes | nindent 4 }}
+  {{- if .Values.coreEngine.persistence.storageClass }}
+  storageClassName: {{ .Values.coreEngine.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.coreEngine.persistence.size | quote }}
+{{- end }}

@@ -1,0 +1,151 @@
+# OpenProdoc Production Helm Chart Values
+# This file contains production-ready configuration for OpenProdoc ECM deployment
+
+# Global settings
+global:
+  # Image pull policy for all containers
+  imagePullPolicy: IfNotPresent
+  # Image pull secrets (if using private registry)
+  imagePullSecrets: []
+  # - name: regcred
+
+# Core Engine Configuration (Backend)
+coreEngine:
+  # Replica count
+  # Number of core-engine instances to run
+  # Default: 2 for high availability
+  # Note: With sessionAffinity enabled, multiple replicas are supported
+  replicaCount: 2
+
+  # Image configuration
+  image:
+    registry: ""  # Leave empty for local registry or specify your registry
+    repository: openprodoc/core-engine
+    tag: "latest"  # Change to specific version tag in production
+    pullPolicy: IfNotPresent
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 8080
+    annotations: {}
+    # Session affinity configuration
+    # Enable sticky sessions by client IP to maintain session state
+    sessionAffinity:
+      enabled: true
+      timeoutSeconds: 10800  # 3 hours
+
+  # Resource limits and requests
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 500m
+      memory: 2Gi
+
+  # Environment configuration
+  config:
+    # Database configuration (uses external PostgreSQL)
+    database:
+      type: postgresql
+      host: openprodoc-postgresql
+      port: 5432
+      name: prodoc
+      user: user1
+      password: pass1
+      jdbcClass: org.postgresql.Driver
+      jdbcUrlTemplate: "jdbc:postgresql://{HOST}:{PORT}/{DATABASE}"
+      jdbcDriverPath: "./lib/postgresql-42.3.8.jar"
+
+    # OpenProdoc installation settings
+    install:
+      enabled: true  # Auto-install on first run
+      rootPassword: "admin"  # OpenProdoc admin password
+      defaultLang: "EN"
+      timestampFormat: "dd/MM/yyyy HH:mm:ss"
+      dateFormat: "dd/MM/yyyy"
+      mainKey: "uthfytnbh84kflh06fhru"  # Encryption key for documents
+
+    # Repository configuration
+    repository:
+      name: "Reposit"
+      encrypt: "False"
+      url: "/storage/OPD/"
+      user: ""
+      password: ""
+      type: "FS"
+      param: ""
+
+  # Persistence for document storage
+  persistence:
+    enabled: true
+    storageClass: ""  # Use default storage class or specify
+    accessModes:
+      - ReadWriteOnce
+    size: 100Gi  # Adjust based on expected document volume
+    annotations: {}
+    mountPath: /storage/OPD
+
+  # Pod configuration
+  podAnnotations: {}
+  podSecurityContext:
+    fsGroup: 1000
+    runAsNonRoot: true
+    runAsUser: 1000
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: false
+
+  # Liveness and readiness probes
+  livenessProbe:
+    enabled: false  # core-engine runs as background process
+
+  readinessProbe:
+    enabled: false
+
+  # Node selector
+  nodeSelector: {}
+
+  # Tolerations
+  tolerations: []
+
+  # Affinity
+  affinity: {}
+
+
+
+# Ingress Configuration
+ingress:
+  enabled: false
+  className: traefik  # Using Traefik (k3d default)
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    # Uncomment for HTTPS:
+    # traefik.ingress.kubernetes.io/router.entrypoints: websecure
+
+  hosts:
+    - host: localhost  # For local k3d access
+      paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            service:
+              name: core-engine  # Component name (will be prefixed with release name)
+              port:
+                number: 8080
+
+  tls: []  # Disabled for local development
+
+
+# Service Account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: "prodoc"
+
+

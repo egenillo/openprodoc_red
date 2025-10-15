@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "openprodoc.fullname" . }}-core-engine
+  labels:
+    {{- include "openprodoc.coreEngine.labels" . | nindent 4 }}
+  {{- with .Values.coreEngine.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.coreEngine.service.type }}
+  {{- if .Values.coreEngine.service.sessionAffinity.enabled }}
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: {{ .Values.coreEngine.service.sessionAffinity.timeoutSeconds }}
+  {{- end }}
+  ports:
+  - port: {{ .Values.coreEngine.service.port }}
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    {{- include "openprodoc.coreEngine.selectorLabels" . | nindent 4 }}

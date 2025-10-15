@@ -1,0 +1,44 @@
+OpenProdoc ECM has been deployed!
+
+Release: {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}
+
+1. Get the application URL by running:
+  kubectl port-forward --namespace {{ .Release.Namespace }} svc/{{ include "openprodoc.fullname" . }}-core-engine 8080:{{ .Values.coreEngine.service.port }}
+  Then access: http://localhost:8080/ProdocWeb2/
+
+2. Default login credentials:
+  Username: root
+  Password: admin (the password set during installation)
+
+3. Check deployment status:
+  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+4. View logs:
+  Core Engine: kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/component=core-engine
+
+{{- if .Values.coreEngine.config.install.enabled }}
+
+IMPORTANT: First-time Installation
+----------------------------------
+The core engine will automatically install OpenProdoc on first startup if the database is empty.
+This process may take 2-5 minutes. Monitor the installation with:
+
+  kubectl logs -f -n {{ .Release.Namespace }} -l app.kubernetes.io/component=core-engine
+
+{{- end }}
+
+{{- if .Values.coreEngine.persistence.enabled }}
+
+Storage Configuration:
+  Documents: {{ .Values.coreEngine.persistence.size }} ({{ .Values.coreEngine.persistence.mountPath }})
+  {{- if .Values.coreEngine.persistence.storageClass }}
+  Storage Class: {{ .Values.coreEngine.persistence.storageClass }}
+  {{- end }}
+
+{{- end }}
+
+For more information:
+  - Documentation: https://github.com/yourusername/openprodoc-red
+  - Issues: https://github.com/yourusername/openprodoc-red/issues
+  - OpenProdoc Official: http://openprodoc.org

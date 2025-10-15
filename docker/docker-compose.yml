@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: openprodoc-postgres
+    environment:
+      POSTGRES_DB: prodoc
+      POSTGRES_USER: prodoc
+      POSTGRES_PASSWORD: prodoc123
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - openprodoc-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prodoc"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # OpenProdoc Core Engine
+  core-engine:
+    image: openprodoc/core-engine:latest
+    container_name: openprodoc-core
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Database configuration
+      DB_TYPE: postgresql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: prodoc
+      DB_USER: prodoc
+      DB_PASSWORD: prodoc123
+      DB_JDBC_CLASS: org.postgresql.Driver
+      DB_JDBC_URL_TEMPLATE: "jdbc:postgresql://{HOST}:{PORT}/{DATABASE}"
+
+      # Installation configuration
+      ROOT_PASSWORD: admin
+      DEFAULT_LANG: EN
+      TIMESTAMP_FORMAT: "dd/MM/yyyy HH:mm:ss"
+      DATE_FORMAT: "dd/MM/yyyy"
+      MAIN_KEY: "uthfytnbh84kflh06fhru"
+
+      # Repository configuration
+      REPO_NAME: Reposit
+      REPO_ENCRYPT: "False"
+      REPO_URL: /storage/OPD/
+      REPO_TYPE: FS
+
+      # Driver path
+      JDBC_DRIVER_PATH: ./lib/postgresql-42.3.8.jar
+
+      # Auto-install on first run
+      INSTALL_ON_STARTUP: "true"
+    volumes:
+      - openprodoc-storage:/storage/OPD
+      - openprodoc-config:/opt/openprodoc/config
+    ports:
+      - "8080:8080"  
+    networks:
+      - openprodoc-network
+    restart: unless-stopped
+
+  #  frontend accessible at http://localhost:8080/ProdocWeb2/
+
+volumes:
+  postgres-data:
+    driver: local
+  openprodoc-storage:
+    driver: local
+  openprodoc-config:
+    driver: local
+
+networks:
+  openprodoc-network:
+    driver: bridge

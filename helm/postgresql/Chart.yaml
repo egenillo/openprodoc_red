@@ -1,0 +1,15 @@
+apiVersion: v2
+name: openprodoc-postgresql
+description: PostgreSQL Database for OpenProdoc ECM System
+type: application
+version: 1.0.0
+appVersion: "14"
+
+keywords:
+  - postgresql
+  - database
+  - openprodoc
+  - ecm
+
+maintainers:
+  - name: OpenProdoc Team

@@ -27,7 +27,7 @@
             <artifactId>Prodoc</artifactId>
             <version>1.0</version>
             <scope>system</scope>
-            <systemPath>C:/datos/claude/OPD_Install3.0.4/OPD_Install/lib/Prodoc.jar</systemPath>
+            <systemPath>C:/OPD_Install3.0.4/OPD_Install/lib/Prodoc.jar</systemPath>
         </dependency>
     </dependencies>
 

@@ -3,9 +3,9 @@
 
 [🇬🇧 English](README.md) | [🇪🇸 Español](README.es.md) | [🇫🇷 Français](README.fr.md) | [🇩🇪 Deutsch](README.de.md) | [🇸🇦 العربية](README.ar.md)
 
-## Sistema de Gestión de Contenido Empresarial en la Nube
+## Sistema de Gestión Documental en la Nube
 
-**OpenProdoc Red** es una versión de OpenProdoc ECM (Sistema de Gestión de Contenido Empresarial) preparada para Kubernetes. Esta edición ha sido containerizada y optimizada para despliegue en la nube con Helm charts, soporte para Docker e infraestructura de nivel de producción.
+**OpenProdoc Red** es una versión de OpenProdoc DMS (Sistema de Gestión Documental) preparada para Kubernetes. Esta edición ha sido containerizada y optimizada para despliegue en la nube con Helm charts, soporte para Docker e infraestructura de nivel de producción.
 
 ----
 
@@ -32,6 +32,15 @@
 * **Afinidad de sesión** - Sesiones persistentes para despliegues multi-réplica
 * **Verificaciones de salud** - Pruebas de preparación y actividad de Kubernetes
 * **Endurecimiento de seguridad** - Contenedores sin root, permisos mínimos
+
+### Integración con IA mediante Model Context Protocol (MCP)
+* **Servidor MCP incluido** - Soporte nativo para integración con asistentes de IA
+* **Listo para Claude Desktop & Claude Code** - Integración perfecta con las herramientas de IA de Anthropic
+* **Cobertura completa de API** - Operaciones CRUD completas para carpetas, documentos y tesauros
+* **Interfaz de lenguaje natural** - Gestione documentos usando comandos conversacionales
+* **Formatos de respuesta duales** - Markdown para humanos, JSON para máquinas
+* **Autenticación automática** - Gestión de credenciales basada en entorno
+* **Ver [MCP/README.md](MCP/README.md)** para la guía completa de integración
 
 ----
 

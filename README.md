@@ -3,9 +3,9 @@
 
 [🇬🇧 English](README.md) | [🇪🇸 Español](README.es.md) | [🇫🇷 Français](README.fr.md) | [🇩🇪 Deutsch](README.de.md) | [🇸🇦 العربية](README.ar.md)
 
-## Cloud-Native Enterprise Content Management System
+## Cloud-Native Document Management System
 
-**OpenProdoc Red** is a Kubernetes-ready version of the OpenProdoc ECM (Enterprise Content Management) system. This edition has been containerized and optimized for cloud deployment with Helm charts, Docker support, and production-grade infrastructure.
+**OpenProdoc Red** is a Kubernetes-ready version of the OpenProdoc DMS (Document Management System). This edition has been containerized and optimized for cloud deployment with Helm charts, Docker support, and production-grade infrastructure.
 
 ----
 
@@ -32,6 +32,15 @@
 * **Session affinity** - Sticky sessions for multi-replica deployments
 * **Health checks** - Kubernetes readiness and liveness probes
 * **Security hardening** - Non-root containers, minimal permissions
+
+### AI Integration with Model Context Protocol (MCP)
+* **MCP Server included** - Native support for AI assistant integration
+* **Claude Desktop & Claude Code ready** - Seamless integration with Anthropic's AI tools
+* **Comprehensive API coverage** - Full CRUD operations for folders, documents, and thesaurus
+* **Natural language interface** - Manage documents using conversational commands
+* **Dual response formats** - Markdown for humans, JSON for machines
+* **Automatic authentication** - Environment-based credential management
+* **See [MCP/README.md](MCP/README.md)** for complete integration guide
 
 ----
 

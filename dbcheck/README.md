@@ -24,14 +24,6 @@ The dbcheck utility is used by the core-engine Docker container to determine whe
 - Maven 3.6+
 - Prodoc.jar from core-engine (must be built first)
 
-### Build Command
-
-```bash
-cd C:\datos\claude\openprodoc_red2\dbcheck
-mvn clean package
-```
-
-The JAR file will be created at: `target/ProdocDBCheck.jar`
 
 ## Usage
 

@@ -298,9 +298,9 @@ openwebui:
   watcher:
     enabled: true
     image:
-      registry: "openprodoc-registry:5000"
+      registry: ""
       repository: openprodoc/openprodoc_rag
-      tag: "v2.0.1"
+      tag: "latest"
       pullPolicy: IfNotPresent
 
     config:

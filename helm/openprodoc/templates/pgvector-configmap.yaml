@@ -1,0 +1,19 @@
+{{- if .Values.pgvector.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "openprodoc.fullname" . }}-pgvector-init
+  labels:
+    {{- include "openprodoc.pgvector.labels" . | nindent 4 }}
+data:
+  init-pgvector.sql: |
+    -- Enable pgvector extension
+    CREATE EXTENSION IF NOT EXISTS vector;
+
+    -- Grant necessary permissions
+    GRANT ALL PRIVILEGES ON DATABASE {{ .Values.pgvector.config.database }} TO {{ .Values.pgvector.config.user }};
+
+    -- Create schema for vector storage if needed
+    CREATE SCHEMA IF NOT EXISTS vectors;
+    GRANT ALL ON SCHEMA vectors TO {{ .Values.pgvector.config.user }};
+{{- end }}

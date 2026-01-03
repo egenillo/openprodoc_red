@@ -1,0 +1,21 @@
+{{- if and .Values.openwebui.enabled .Values.openwebui.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "openprodoc.fullname" . }}-openwebui-data
+  labels:
+    {{- include "openprodoc.openwebui.labels" . | nindent 4 }}
+  {{- with .Values.openwebui.persistence.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- toYaml .Values.openwebui.persistence.accessModes | nindent 4 }}
+  {{- if .Values.openwebui.persistence.storageClass }}
+  storageClassName: {{ .Values.openwebui.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.openwebui.persistence.size | quote }}
+{{- end }}

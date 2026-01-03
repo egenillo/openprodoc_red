@@ -42,6 +42,16 @@
 * **Authentification automatique** - Gestion des identifiants basée sur l'environnement
 * **Voir [MCP/README.md](MCP/README.md)** pour le guide d'intégration complet
 
+### Système RAG Intégré (Génération Augmentée par Récupération)
+* **Recherche de documents par IA** - Recherche sémantique avec requêtes en langage naturel
+* **Capacités de questions-réponses** - Posez des questions et obtenez des réponses de vos documents
+* **Ingestion automatique de documents** - Les nouveaux documents sont automatiquement indexés pour RAG
+* **Base de connaissances par dossier** - Chaque dossier OpenProdoc devient une base de connaissances distincte
+* **Accès basé sur les permissions** - Les utilisateurs accèdent uniquement aux bases de connaissances des documents autorisés
+* **Authentification transparente** - Les utilisateurs OpenProdoc se connectent automatiquement à l'interface OpenWebUI
+* **Stack de niveau production** - Inclut PGVector, Ollama (optimisé CPU) et Open WebUI
+* **Voir [docs/RAG_SETUP.md](docs/RAG_SETUP.md)** pour le guide de déploiement
+
 ----
 
 ## 📋 Fonctionnalités ECM Principales

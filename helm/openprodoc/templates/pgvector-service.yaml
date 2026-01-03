@@ -1,0 +1,17 @@
+{{- if .Values.pgvector.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "openprodoc.fullname" . }}-pgvector
+  labels:
+    {{- include "openprodoc.pgvector.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.pgvector.service.type }}
+  ports:
+  - port: {{ .Values.pgvector.service.port }}
+    targetPort: postgresql
+    protocol: TCP
+    name: postgresql
+  selector:
+    {{- include "openprodoc.pgvector.selectorLabels" . | nindent 4 }}
+{{- end }}

@@ -1,0 +1,245 @@
+{{- if .Values.openwebui.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "openprodoc.fullname" . }}-openwebui
+  labels:
+    {{- include "openprodoc.openwebui.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.openwebui.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "openprodoc.openwebui.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        {{- with .Values.openwebui.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "openprodoc.openwebui.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "openprodoc.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.openwebui.podSecurityContext | nindent 8 }}
+      initContainers:
+      - name: wait-for-ollama
+        image: curlimages/curl:latest
+        command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for Ollama to be ready..."
+          until curl -f http://{{ include "openprodoc.fullname" . }}-ollama:{{ .Values.ollama.service.port }} >/dev/null 2>&1; do
+            echo "Ollama not ready yet, waiting..."
+            sleep 5
+          done
+          echo "Ollama is ready!"
+      {{- if .Values.pgvector.enabled }}
+      - name: wait-for-pgvector
+        image: postgres:16-alpine
+        command:
+        - sh
+        - -c
+        - |
+          until pg_isready -h {{ include "openprodoc.fullname" . }}-pgvector -p {{ .Values.pgvector.service.port }} -U {{ .Values.pgvector.config.user }}; do
+            echo "Waiting for pgvector..."
+            sleep 2
+          done
+        env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "openprodoc.fullname" . }}-pgvector-secret
+              key: password
+      {{- end }}
+      containers:
+      # Main Open WebUI container
+      - name: openwebui
+        securityContext:
+          {{- toYaml .Values.openwebui.securityContext | nindent 12 }}
+        image: "{{ .Values.openwebui.image.registry }}/{{ .Values.openwebui.image.repository }}:{{ .Values.openwebui.image.tag }}"
+        imagePullPolicy: {{ .Values.openwebui.image.pullPolicy }}
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        env:
+        # Ollama configuration
+        - name: OLLAMA_BASE_URL
+          value: "http://{{ include "openprodoc.fullname" . }}-ollama:{{ .Values.ollama.service.port }}"
+        - name: OLLAMA_API_BASE_URL
+          value: "http://{{ include "openprodoc.fullname" . }}-ollama:{{ .Values.ollama.service.port }}"
+
+        {{- if .Values.pgvector.enabled }}
+        # Vector database configuration
+        - name: VECTOR_DB
+          value: "pgvector"
+        - name: PGVECTOR_DB_URL
+          value: "postgresql://{{ .Values.pgvector.config.user }}:{{ .Values.pgvector.config.password }}@{{ include "openprodoc.fullname" . }}-pgvector:{{ .Values.pgvector.service.port }}/{{ .Values.pgvector.config.database }}"
+        {{- end }}
+
+        # RAG configuration
+        - name: RAG_EMBEDDING_MODEL
+          value: {{ .Values.ollama.config.models.embedding | quote }}
+        - name: RAG_EMBEDDING_ENGINE
+          value: "ollama"
+        - name: USE_EMBEDDING_MODEL_DOCKER
+          value: ""
+        - name: CHUNK_SIZE
+          value: {{ .Values.openwebui.config.rag.chunkSize | quote }}
+        - name: CHUNK_OVERLAP
+          value: {{ .Values.openwebui.config.rag.chunkOverlap | quote }}
+
+        # Open WebUI settings
+        - name: WEBUI_NAME
+          value: "OpenProdoc RAG Assistant"
+        - name: WEBUI_SECRET_KEY
+          value: "openprodoc-secret-key-change-in-production"
+        - name: ENABLE_RAG_WEB_SEARCH
+          value: "false"
+        - name: ENABLE_IMAGE_GENERATION
+          value: "false"
+
+        # Enable signup for watcher user creation
+        - name: ENABLE_SIGNUP
+          value: "true"
+        - name: DEFAULT_USER_ROLE
+          value: "admin"
+
+        # Enable SCIM for group management
+        - name: SCIM_ENABLED
+          value: "true"
+        - name: SCIM_TOKEN
+          value: "openprodoc-scim-token-change-in-production"
+
+        volumeMounts:
+        - name: openwebui-data
+          mountPath: /app/backend/data
+        {{- if .Values.openwebui.sharedStorage.enabled }}
+        - name: openprodoc-storage
+          mountPath: {{ .Values.openwebui.sharedStorage.mountPath }}
+          readOnly: {{ .Values.openwebui.sharedStorage.readOnly }}
+        {{- end }}
+
+        resources:
+          {{- toYaml .Values.openwebui.resources | nindent 12 }}
+
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+      {{- if .Values.openwebui.watcher.enabled }}
+      # Watcher sidecar container
+      - name: watcher
+        image: "{{ .Values.openwebui.watcher.image.registry }}{{ if .Values.openwebui.watcher.image.registry }}/{{ end }}{{ .Values.openwebui.watcher.image.repository }}:{{ .Values.openwebui.watcher.image.tag }}"
+        imagePullPolicy: {{ .Values.openwebui.watcher.image.pullPolicy }}
+        env:
+        - name: WATCH_PATH
+          value: {{ .Values.openwebui.watcher.config.watchPath | quote }}
+        - name: OPENWEBUI_URL
+          value: "http://localhost:8080"
+        - name: OPENWEBUI_EMAIL
+          value: {{ .Values.openwebui.watcher.config.email | default "watcher@openprodoc.local" | quote }}
+        - name: OPENWEBUI_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "openprodoc.fullname" . }}-watcher-secret
+              key: password
+        - name: POLL_INTERVAL
+          value: {{ .Values.openwebui.watcher.config.pollInterval | quote }}
+        # Knowledge Base strategy configuration
+        - name: KB_STRATEGY
+          value: "folder"
+        - name: KB_FOLDER_LEVEL
+          value: "1"
+        - name: ENRICH_FILENAME
+          value: "true"
+        - name: SYNC_USERS
+          value: "true"
+        - name: USER_SYNC_INTERVAL
+          value: {{ .Values.openwebui.watcher.config.userSyncInterval | quote }}
+        - name: DEFAULT_USER_PASSWORD
+          value: "OpenProdoc2025!"
+        # Group synchronization configuration
+        - name: SYNC_GROUPS
+          value: "true"
+        - name: GROUP_SYNC_INTERVAL
+          value: {{ .Values.openwebui.watcher.config.groupSyncInterval | quote }}
+        - name: SCIM_API_TOKEN
+          value: "openprodoc-scim-token-change-in-production"
+        # OpenProdoc PostgreSQL connection for metadata queries
+        - name: OPENPRODOC_DB_HOST
+          value: {{ .Values.coreEngine.config.database.host | quote }}
+        - name: OPENPRODOC_DB_PORT
+          value: {{ .Values.coreEngine.config.database.port | quote }}
+        - name: OPENPRODOC_DB_NAME
+          value: {{ .Values.coreEngine.config.database.name | quote }}
+        - name: OPENPRODOC_DB_USER
+          value: {{ .Values.coreEngine.config.database.user | quote }}
+        - name: OPENPRODOC_DB_PASSWORD
+          value: {{ .Values.coreEngine.config.database.password | quote }}
+        volumeMounts:
+        # Mount openwebui-data to write files to DOCS_DIR
+        - name: openwebui-data
+          mountPath: /app/backend/data
+        {{- if .Values.openwebui.sharedStorage.enabled }}
+        - name: openprodoc-storage
+          mountPath: {{ .Values.openwebui.watcher.config.watchPath }}
+          readOnly: true
+        {{- end }}
+        # Use openwebui-data for persistent watcher state
+        - name: openwebui-data
+          mountPath: /state
+          subPath: watcher-state
+        resources:
+          {{- toYaml .Values.openwebui.watcher.resources | nindent 12 }}
+      {{- end }}
+
+      volumes:
+      - name: openwebui-data
+        {{- if .Values.openwebui.persistence.enabled }}
+        persistentVolumeClaim:
+          claimName: {{ include "openprodoc.fullname" . }}-openwebui-data
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+      {{- if .Values.openwebui.sharedStorage.enabled }}
+      - name: openprodoc-storage
+        persistentVolumeClaim:
+          claimName: {{ include "openprodoc.fullname" . }}-storage
+          readOnly: {{ .Values.openwebui.sharedStorage.readOnly }}
+      {{- end }}
+      # Note: watcher-state uses a subPath of openwebui-data volume for persistence
+
+      {{- with .Values.openwebui.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.openwebui.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.openwebui.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

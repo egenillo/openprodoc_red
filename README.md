@@ -42,6 +42,16 @@
 * **Automatic authentication** - Environment-based credential management
 * **See [MCP/README.md](MCP/README.md)** for complete integration guide
 
+### Integrated RAG System (Retrieval-Augmented Generation)
+* **AI-powered document search** - Semantic search with natural language queries
+* **Question-answering capabilities** - Ask questions and get answers from your documents
+* **Automatic document ingestion** - New documents are automatically indexed for RAG
+* **Knowledge base per folder** - Each OpenProdoc folder becomes a separate knowledge base
+* **Permission-based access** - Users only access knowledge bases for documents they have permissions to
+* **Seamless authentication** - OpenProdoc users automatically login to OpenWebUI interface
+* **Production-grade stack** - Includes PGVector, Ollama (CPU-optimized), and Open WebUI
+* **See [docs/RAG_SETUP.md](docs/RAG_SETUP.md)** for deployment guide
+
 ----
 
 ## 📋 Core ECM Features

@@ -55,7 +55,7 @@ coreEngine:
       user: user1
       password: pass1
       jdbcClass: org.postgresql.Driver
-      jdbcUrlTemplate: "jdbc:postgresql://{HOST}:{PORT}/{DATABASE}"
+      jdbcUrlTemplate: "jdbc:postgresql://{HOST}:{PORT}/{DATABASE}?autoCommit=false"
       jdbcDriverPath: "./lib/postgresql-42.3.8.jar"
 
     # OpenProdoc installation settings
@@ -131,6 +131,15 @@ ingress:
   hosts:
     - host: localhost  # For local k3d access
       paths:
+        # RAG Interface (Open WebUI) - prioritize this route
+        - path: /rag
+          pathType: Prefix
+          backend:
+            service:
+              name: openwebui  # Component name (will be prefixed with release name)
+              port:
+                number: 8080
+        # Core OpenProdoc application
         - path: /
           pathType: Prefix
           backend:
@@ -147,5 +156,208 @@ serviceAccount:
   create: true
   annotations: {}
   name: "prodoc"
+
+
+# ========================================
+# RAG Solution Components
+# ========================================
+
+# Vector Database (PostgreSQL with pgvector)
+pgvector:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    registry: ""
+    repository: pgvector/pgvector
+    tag: "pg16"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 5432
+
+  config:
+    database: rag_vectors
+    user: rag_user
+    password: rag_password
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 20Gi
+
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+
+  podAnnotations: {}
+  podSecurityContext:
+    fsGroup: 999
+    runAsNonRoot: true
+    runAsUser: 999
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: false
+
+
+# Ollama - LLM and Embedding Engine
+ollama:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    registry: ""
+    repository: ollama/ollama
+    tag: "0.5.4"  # Updated to recent version with /api/embed support
+    pullPolicy: Always
+
+  service:
+    type: ClusterIP
+    port: 11434
+
+  config:
+    # Models to pull on startup
+    models:
+      llm: "llama3.1:latest"  # or "phi3" for smaller/faster option
+      embedding: "nomic-embed-text:latest"  # Lightweight embedding model for CPU
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 50Gi  # Models require significant storage
+
+  resources:
+    limits:
+      cpu: 8
+      memory: 8Gi
+    requests:
+      cpu: 4
+      memory: 4Gi
+
+  podAnnotations: {}
+  podSecurityContext:
+    fsGroup: 0  # root group for /root/.ollama access
+    # Ollama container needs root access for model storage
+    # runAsNonRoot: false
+    # runAsUser: 0
+
+  securityContext:
+    # Ollama requires root access for /.ollama directory
+    # allowPrivilegeEscalation: false
+    # capabilities:
+    #   drop:
+    #     - ALL
+    readOnlyRootFilesystem: false
+
+
+# Open WebUI - RAG Interface and Orchestrator
+openwebui:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    registry: ghcr.io
+    repository: open-webui/open-webui
+    tag: "main"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 8080
+
+  config:
+    # Ollama connection (service name will be auto-generated)
+    ollamaBaseUrl: ""  # Auto-configured to use openprodoc-ollama service
+
+    # Vector database connection (pgvector)
+    vectorDb:
+      enabled: true
+      type: "pgvector"
+      # Connection URL will be constructed from pgvector config
+
+    # Enable RAG features
+    rag:
+      enabled: true
+      chunkSize: 1500
+      chunkOverlap: 100
+
+  # Watcher sidecar configuration
+  watcher:
+    enabled: true
+    image:
+      registry: "openprodoc-registry:5000"
+      repository: openprodoc/openprodoc_rag
+      tag: "v2.0.1"
+      pullPolicy: IfNotPresent
+
+    config:
+      # Directory to watch (from shared openprodoc PVC)
+      watchPath: "/watch/OPD"
+      # Open WebUI credentials for API authentication
+      email: "watcher@openprodoc.local"
+      password: "12345678"
+      # Poll interval in seconds
+      pollInterval: 30
+      # User synchronization interval in seconds (default: 300 = 5 minutes)
+      userSyncInterval: 30
+      # Group synchronization interval in seconds (default: 3600 = 1 hour)
+      groupSyncInterval: 60
+
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+  # Mount the openprodoc storage PVC (read-only)
+  sharedStorage:
+    enabled: true
+    # Will reference the openprodoc storage PVC
+    claimName: ""  # Auto-generated from openprodoc.fullname
+    mountPath: "/watch/OPD"
+    readOnly: true
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 5Gi  # For Open WebUI data
+
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi
+
+  podAnnotations: {}
+  podSecurityContext:
+    fsGroup: 1000
+    runAsNonRoot: true
+    runAsUser: 1000
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: false
 
 

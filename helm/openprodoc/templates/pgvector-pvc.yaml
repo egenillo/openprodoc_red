@@ -1,0 +1,21 @@
+{{- if and .Values.pgvector.enabled .Values.pgvector.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "openprodoc.fullname" . }}-pgvector-data
+  labels:
+    {{- include "openprodoc.pgvector.labels" . | nindent 4 }}
+  {{- with .Values.pgvector.persistence.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- toYaml .Values.pgvector.persistence.accessModes | nindent 4 }}
+  {{- if .Values.pgvector.persistence.storageClass }}
+  storageClassName: {{ .Values.pgvector.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.pgvector.persistence.size | quote }}
+{{- end }}

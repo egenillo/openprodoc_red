@@ -75,3 +75,51 @@ Core Engine selector labels
 {{ include "openprodoc.selectorLabels" . }}
 app.kubernetes.io/component: core-engine
 {{- end }}
+
+{{/*
+PGVector labels
+*/}}
+{{- define "openprodoc.pgvector.labels" -}}
+{{ include "openprodoc.labels" . }}
+app.kubernetes.io/component: pgvector
+{{- end }}
+
+{{/*
+PGVector selector labels
+*/}}
+{{- define "openprodoc.pgvector.selectorLabels" -}}
+{{ include "openprodoc.selectorLabels" . }}
+app.kubernetes.io/component: pgvector
+{{- end }}
+
+{{/*
+Ollama labels
+*/}}
+{{- define "openprodoc.ollama.labels" -}}
+{{ include "openprodoc.labels" . }}
+app.kubernetes.io/component: ollama
+{{- end }}
+
+{{/*
+Ollama selector labels
+*/}}
+{{- define "openprodoc.ollama.selectorLabels" -}}
+{{ include "openprodoc.selectorLabels" . }}
+app.kubernetes.io/component: ollama
+{{- end }}
+
+{{/*
+Open WebUI labels
+*/}}
+{{- define "openprodoc.openwebui.labels" -}}
+{{ include "openprodoc.labels" . }}
+app.kubernetes.io/component: openwebui
+{{- end }}
+
+{{/*
+Open WebUI selector labels
+*/}}
+{{- define "openprodoc.openwebui.selectorLabels" -}}
+{{ include "openprodoc.selectorLabels" . }}
+app.kubernetes.io/component: openwebui
+{{- end }}

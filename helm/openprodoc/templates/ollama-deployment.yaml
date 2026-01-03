@@ -1,0 +1,137 @@
+{{- if .Values.ollama.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "openprodoc.fullname" . }}-ollama
+  labels:
+    {{- include "openprodoc.ollama.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.ollama.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "openprodoc.ollama.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        {{- with .Values.ollama.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "openprodoc.ollama.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "openprodoc.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.ollama.podSecurityContext | nindent 8 }}
+      initContainers:
+      - name: pull-models
+        image: "{{ .Values.ollama.image.registry }}{{ if .Values.ollama.image.registry }}/{{ end }}{{ .Values.ollama.image.repository }}:{{ .Values.ollama.image.tag }}"
+        imagePullPolicy: {{ .Values.ollama.image.pullPolicy }}
+        command:
+        - sh
+        - -c
+        - |
+          # Start Ollama server in background
+          ollama serve &
+          OLLAMA_PID=$!
+
+          # Wait for Ollama to be ready
+          echo "Waiting for Ollama to start..."
+          for i in $(seq 1 30); do
+            if ollama list >/dev/null 2>&1; then
+              echo "Ollama is ready!"
+              break
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 2
+          done
+
+          # Pull LLM model
+          echo "Pulling LLM model: {{ .Values.ollama.config.models.llm }}"
+          ollama pull {{ .Values.ollama.config.models.llm }}
+
+          # Pull embedding model
+          echo "Pulling embedding model: {{ .Values.ollama.config.models.embedding }}"
+          ollama pull {{ .Values.ollama.config.models.embedding }}
+
+          echo "Models downloaded successfully!"
+
+          # Stop background server
+          kill $OLLAMA_PID
+          wait $OLLAMA_PID 2>/dev/null || true
+        env:
+        - name: OLLAMA_HOST
+          value: "0.0.0.0:11434"
+        volumeMounts:
+        - name: ollama-data
+          mountPath: /root/.ollama
+        resources:
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+      containers:
+      - name: ollama
+        securityContext:
+          {{- toYaml .Values.ollama.securityContext | nindent 12 }}
+        image: "{{ .Values.ollama.image.registry }}{{ if .Values.ollama.image.registry }}/{{ end }}{{ .Values.ollama.image.repository }}:{{ .Values.ollama.image.tag }}"
+        imagePullPolicy: {{ .Values.ollama.image.pullPolicy }}
+        command: ["ollama", "serve"]
+        ports:
+        - name: http
+          containerPort: 11434
+          protocol: TCP
+        env:
+        - name: OLLAMA_HOST
+          value: "0.0.0.0:11434"
+        - name: OLLAMA_KEEP_ALIVE
+          value: "24h"
+        - name: OLLAMA_NUM_PARALLEL
+          value: "4"
+        volumeMounts:
+        - name: ollama-data
+          mountPath: /root/.ollama
+        resources:
+          {{- toYaml .Values.ollama.resources | nindent 12 }}
+        livenessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: ollama-data
+        {{- if .Values.ollama.persistence.enabled }}
+        persistentVolumeClaim:
+          claimName: {{ include "openprodoc.fullname" . }}-ollama-data
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+      {{- with .Values.ollama.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.ollama.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.ollama.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

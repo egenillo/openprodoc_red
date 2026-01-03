@@ -1,0 +1,1565 @@
+{{- if false }}
+# This ConfigMap is no longer used - replaced with Go binary in openprodoc_rag container
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "openprodoc.fullname" . }}-watcher-script
+  labels:
+    {{- include "openprodoc.openwebui.labels" . | nindent 4 }}
+data:
+  watcher.py: |
+    #!/usr/bin/env python3
+    """
+    OpenProdoc Storage Watcher for Open WebUI RAG Integration
+
+    This script monitors the OpenProdoc storage directory for new or modified
+    documents and automatically ingests them into Open WebUI for RAG processing.
+    """
+
+    import os
+    import time
+    import json
+    import hashlib
+    import logging
+    import requests
+    import re
+    from pathlib import Path
+    from typing import Set, Dict, Optional, Tuple, List
+    from watchdog.observers import Observer
+    from watchdog.events import FileSystemEventHandler, FileSystemEvent
+
+    # Try to import python-magic for better MIME detection
+    try:
+        import magic
+        HAS_MAGIC = True
+    except ImportError:
+        HAS_MAGIC = False
+        logger = logging.getLogger(__name__)
+        logger.warning("python-magic not available, using fallback detection")
+
+    # Try to import psycopg2 for OpenProdoc database access
+    try:
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+        HAS_PSYCOPG2 = True
+    except ImportError:
+        HAS_PSYCOPG2 = False
+        logger = logging.getLogger(__name__)
+        logger.warning("psycopg2 not available, metadata queries will be limited")
+
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(__name__)
+
+    # Configuration from environment variables
+    WATCH_PATH = os.getenv('WATCH_PATH', '/watch/OPD')
+    OPENWEBUI_URL = os.getenv('OPENWEBUI_URL', 'http://localhost:8080')
+    OPENWEBUI_EMAIL = os.getenv('OPENWEBUI_EMAIL', 'watcher@openprodoc.local')
+    OPENWEBUI_PASSWORD = os.getenv('OPENWEBUI_PASSWORD', 'changeme')
+    POLL_INTERVAL = int(os.getenv('POLL_INTERVAL', '30'))
+    STATE_FILE = '/state/processed_files.json'
+    SYMLINK_MAP_FILE = '/state/symlink_map.json'
+    KNOWLEDGE_BASE_NAME = os.getenv('KNOWLEDGE_BASE_NAME', 'OpenProdoc Documents')
+    KNOWLEDGE_BASE_DESC = os.getenv('KNOWLEDGE_BASE_DESC', 'Auto-indexed documents from OpenProdoc storage')
+    UPLOADS_DIR = '/app/backend/data/uploads'
+
+    # Timing configuration
+    FILE_WRITE_WAIT = int(os.getenv('FILE_WRITE_WAIT', '2'))  # Wait for file to be fully written
+    DELETION_WAIT = int(os.getenv('DELETION_WAIT', '3'))  # Wait after deletion for cleanup
+    PROCESSING_WAIT = int(os.getenv('PROCESSING_WAIT', '3'))  # Wait for file processing
+
+    # Knowledge Base strategy
+    KB_STRATEGY = os.getenv('KB_STRATEGY', 'single')  # Options: single, acl, folder
+    KB_FOLDER_LEVEL = int(os.getenv('KB_FOLDER_LEVEL', '1'))
+    ENRICH_FILENAME = os.getenv('ENRICH_FILENAME', 'false')
+    SYNC_USERS = os.getenv('SYNC_USERS', 'false')
+    USER_SYNC_INTERVAL = int(os.getenv('USER_SYNC_INTERVAL', '3600'))
+    SYNC_GROUPS = os.getenv('SYNC_GROUPS', 'false')
+    GROUP_SYNC_INTERVAL = int(os.getenv('GROUP_SYNC_INTERVAL', '3600'))
+    SCIM_API_TOKEN = os.getenv('SCIM_API_TOKEN', '')
+
+    # OpenProdoc PostgreSQL connection
+    OPENPRODOC_DB_HOST = os.getenv('OPENPRODOC_DB_HOST', 'openprodoc-postgresql')
+    OPENPRODOC_DB_PORT = int(os.getenv('OPENPRODOC_DB_PORT', '5432'))
+    OPENPRODOC_DB_NAME = os.getenv('OPENPRODOC_DB_NAME', 'prodoc')
+    OPENPRODOC_DB_USER = os.getenv('OPENPRODOC_DB_USER', 'user1')
+    OPENPRODOC_DB_PASSWORD = os.getenv('OPENPRODOC_DB_PASSWORD', 'pass1')
+
+    # MIME type to file extension mapping for OpenProdoc files without extensions
+    MIME_TO_EXTENSION = {
+        'text/plain': '.txt',
+        'text/markdown': '.md',
+        'application/pdf': '.pdf',
+        'application/msword': '.doc',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+        'text/html': '.html',
+        'application/json': '.json',
+        'text/csv': '.csv',
+        'text/xml': '.xml',
+        'application/xml': '.xml',
+        'text/x-rst': '.rst',
+        'application/rtf': '.rtf',
+        'text/rtf': '.rtf',
+    }
+
+    class DocumentWatcher(FileSystemEventHandler):
+        """Watches for document changes and triggers ingestion."""
+
+        def __init__(self):
+            self.processed_files: Dict[str, str] = self.load_state()
+            self.symlink_map: Dict[str, Dict[str, str]] = self.load_symlink_map()
+            self.pending_files: Set[str] = set()
+            self.jwt_token: Optional[str] = None
+            self.token_expiry: float = 0
+            self.knowledge_base_id: Optional[str] = None
+            self.db_conn: Optional[any] = None
+            # Login to get JWT token
+            self.login()
+            # Ensure Knowledge Base exists
+            self.ensure_knowledge_base()
+            # Connect to OpenProdoc database
+            if HAS_PSYCOPG2:
+                self.connect_to_openprodoc_db()
+
+        def load_state(self) -> Dict[str, str]:
+            """Load previously processed files state."""
+            try:
+                if os.path.exists(STATE_FILE):
+                    with open(STATE_FILE, 'r') as f:
+                        return json.load(f)
+            except Exception as e:
+                logger.warning(f"Could not load state file: {e}")
+            return {}
+
+        def save_state(self):
+            """Save processed files state."""
+            try:
+                os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+                with open(STATE_FILE, 'w') as f:
+                    json.dump(self.processed_files, f, indent=2)
+            except Exception as e:
+                logger.error(f"Could not save state file: {e}")
+
+        def load_symlink_map(self) -> Dict[str, Dict[str, str]]:
+            """Load symlink mapping (doc_id -> {symlink_name, target_path})."""
+            try:
+                if os.path.exists(SYMLINK_MAP_FILE):
+                    with open(SYMLINK_MAP_FILE, 'r') as f:
+                        return json.load(f)
+            except Exception as e:
+                logger.warning(f"Could not load symlink map: {e}")
+            return {}
+
+        def save_symlink_map(self):
+            """Save symlink mapping."""
+            try:
+                os.makedirs(os.path.dirname(SYMLINK_MAP_FILE), exist_ok=True)
+                with open(SYMLINK_MAP_FILE, 'w') as f:
+                    json.dump(self.symlink_map, f, indent=2)
+            except Exception as e:
+                logger.error(f"Could not save symlink map: {e}")
+
+        def connect_to_openprodoc_db(self) -> bool:
+            """Connect to OpenProdoc PostgreSQL database."""
+            try:
+                logger.info(f"Connecting to OpenProdoc database at {OPENPRODOC_DB_HOST}:{OPENPRODOC_DB_PORT}/{OPENPRODOC_DB_NAME}")
+                self.db_conn = psycopg2.connect(
+                    host=OPENPRODOC_DB_HOST,
+                    port=OPENPRODOC_DB_PORT,
+                    database=OPENPRODOC_DB_NAME,
+                    user=OPENPRODOC_DB_USER,
+                    password=OPENPRODOC_DB_PASSWORD,
+                    connect_timeout=10
+                )
+                logger.info("Successfully connected to OpenProdoc database")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to connect to OpenProdoc database: {e}")
+                self.db_conn = None
+                return False
+
+        def sync_openprodoc_users(self) -> bool:
+            """
+            Sync users from OpenProdoc pd_users table to OpenWebUI.
+            Creates users with format: {username}@openprodoc.local
+            """
+            if not self.db_conn:
+                logger.warning("No database connection for user sync")
+                return False
+
+            try:
+                cursor = self.db_conn.cursor(cursor_factory=RealDictCursor)
+
+                # Query all active users from OpenProdoc
+                query = """
+                    SELECT name, role, email
+                    FROM pd_users
+                    WHERE name NOT IN ('Install', 'root') AND active = 1
+                """
+                cursor.execute(query)
+                openprodoc_users = cursor.fetchall()
+                cursor.close()
+
+                logger.info(f"Found {len(openprodoc_users)} OpenProdoc users to sync")
+
+                # Authenticate as admin to create users
+                if not self.ensure_authenticated():
+                    logger.error("Cannot sync users: authentication failed")
+                    return False
+
+                # For each OpenProdoc user
+                for user in openprodoc_users:
+                    username = user.get('name')
+                    user_role = user.get('role', '')
+
+                    email = f"{username}@openprodoc.local"
+
+                    # Check if user exists in OpenWebUI
+                    # Note: OpenWebUI doesn't have a user lookup API
+                    # For now, we'll try to create and ignore 400 errors (user exists)
+
+                    try:
+                        # Attempt to create user via admin API (/api/v1/auths/add)
+                        admin_url = f"{OPENWEBUI_URL}/api/v1/auths/add"
+                        headers = {
+                            "Authorization": f"Bearer {self.jwt_token}",
+                            "Content-Type": "application/json"
+                        }
+                        admin_payload = {
+                            "email": email,
+                            "password": os.getenv('DEFAULT_USER_PASSWORD', 'changeme'),
+                            "name": username,
+                            "role": "user"  # Default role, can be mapped from OpenProdoc role
+                        }
+
+                        response = requests.post(admin_url, headers=headers, json=admin_payload, timeout=10)
+
+                        if response.status_code in [200, 201]:
+                            logger.info(f"Created user: {email} (role: user)")
+                        elif response.status_code == 400:
+                            logger.debug(f"User already exists: {email}")
+                        elif response.status_code == 409:
+                            logger.debug(f"User already exists (conflict): {email}")
+                        else:
+                            logger.warning(f"Failed to create user {email}: {response.status_code} - {response.text}")
+
+                    except Exception as e:
+                        logger.error(f"Error creating user {email}: {e}")
+
+                return True
+
+            except Exception as e:
+                logger.error(f"Error during user sync: {e}")
+                return False
+
+        def run_user_sync_periodically(self):
+            """Run user sync in background thread."""
+            while True:
+                try:
+                    logger.info("Running periodic user sync...")
+                    self.sync_openprodoc_users()
+                except Exception as e:
+                    logger.error(f"User sync failed: {e}")
+
+                # Wait for next sync
+                time.sleep(USER_SYNC_INTERVAL)
+
+        def get_openwebui_groups(self) -> Optional[List[Dict]]:
+            """
+            Get all groups from OpenWebUI.
+            Tries regular API first, falls back to SCIM if needed.
+            Returns list of groups or None on error.
+            """
+            # Try regular API first (more reliable)
+            try:
+                if not self.ensure_authenticated():
+                    logger.error("Cannot get groups: authentication failed")
+                    return None
+
+                url = f"{OPENWEBUI_URL}/api/v1/groups/"
+                headers = {
+                    "Authorization": f"Bearer {self.jwt_token}",
+                    "Accept": "application/json"
+                }
+
+                response = requests.get(url, headers=headers, timeout=10)
+
+                if response.status_code == 200:
+                    groups = response.json()
+                    logger.debug(f"Retrieved {len(groups)} groups from regular API")
+                    return groups
+                else:
+                    logger.warning(f"Regular groups API returned {response.status_code}, trying SCIM...")
+
+            except Exception as e:
+                logger.warning(f"Regular groups API failed: {e}, trying SCIM...")
+
+            # Fallback to SCIM API
+            if not SCIM_API_TOKEN:
+                logger.error("SCIM_API_TOKEN not configured and regular API failed")
+                return None
+
+            try:
+                url = f"{OPENWEBUI_URL}/api/v1/scim/v2/Groups"
+                headers = {
+                    "Authorization": f"Bearer {SCIM_API_TOKEN}",
+                    "Content-Type": "application/scim+json"
+                }
+
+                response = requests.get(url, headers=headers, timeout=10)
+                response.raise_for_status()
+
+                result = response.json()
+                groups = result.get('Resources', [])
+                logger.debug(f"Retrieved {len(groups)} groups from SCIM API")
+                return groups
+
+            except Exception as e:
+                logger.error(f"Error retrieving OpenWebUI groups via SCIM: {e}")
+                return None
+
+        def create_openwebui_group_scim(self, group_name: str, description: str = "") -> Optional[str]:
+            """
+            Create a group in OpenWebUI via SCIM API.
+            Returns group ID or None on error.
+            """
+            if not SCIM_API_TOKEN:
+                logger.error("SCIM_API_TOKEN not configured")
+                return None
+
+            try:
+                url = f"{OPENWEBUI_URL}/api/v1/scim/v2/Groups"
+                headers = {
+                    "Authorization": f"Bearer {SCIM_API_TOKEN}",
+                    "Content-Type": "application/scim+json"
+                }
+                payload = {
+                    "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+                    "displayName": group_name,
+                    "externalId": f"openprodoc-{group_name.lower()}"
+                }
+
+                response = requests.post(url, headers=headers, json=payload, timeout=10)
+
+                if response.status_code in [200, 201]:
+                    result = response.json()
+                    group_id = result.get('id')
+                    logger.info(f"Created group: {group_name} (ID: {group_id})")
+                    return group_id
+                elif response.status_code == 409:
+                    logger.debug(f"Group already exists: {group_name}")
+                    # Try to get the existing group ID
+                    existing_groups = self.get_openwebui_groups()
+                    if existing_groups:
+                        for group in existing_groups:
+                            if group.get('displayName') == group_name:
+                                return group.get('id')
+                    return None
+                elif response.status_code == 500:
+                    # SCIM bug workaround: Group might be created despite 500 error
+                    logger.warning(f"Got 500 error creating group {group_name}, checking if it was actually created...")
+                    time.sleep(1)  # Brief delay to let DB commit
+                    existing_groups = self.get_openwebui_groups()
+                    if existing_groups:
+                        for group in existing_groups:
+                            if group.get('displayName') == group_name:
+                                group_id = group.get('id')
+                                logger.info(f"Group {group_name} was created despite error (ID: {group_id})")
+                                return group_id
+                    logger.error(f"Group {group_name} was not created, SCIM endpoint has a bug")
+                    return None
+                else:
+                    logger.warning(f"Failed to create group {group_name}: {response.status_code} - {response.text}")
+                    return None
+
+            except Exception as e:
+                logger.error(f"Error creating group {group_name}: {e}")
+                return None
+
+        def add_user_to_group_scim(self, group_id: str, user_email: str) -> bool:
+            """
+            Add a user to a group.
+            Tries regular API first, falls back to SCIM.
+            """
+            # Try regular API first
+            try:
+                if not self.ensure_authenticated():
+                    logger.error("Cannot add user to group: authentication failed")
+                    return False
+
+                url = f"{OPENWEBUI_URL}/api/v1/groups/{group_id}/user/add"
+                headers = {
+                    "Authorization": f"Bearer {self.jwt_token}",
+                    "Content-Type": "application/json"
+                }
+                payload = {"user_id": user_email}  # May need actual user ID
+
+                response = requests.post(url, headers=headers, json=payload, timeout=10)
+
+                if response.status_code in [200, 201, 204]:
+                    logger.info(f"Added {user_email} to group {group_id} via regular API")
+                    return True
+                else:
+                    logger.warning(f"Regular API failed ({response.status_code}), trying SCIM...")
+
+            except Exception as e:
+                logger.warning(f"Regular API failed: {e}, trying SCIM...")
+
+            # Fallback to SCIM API
+            if not SCIM_API_TOKEN:
+                logger.error("SCIM_API_TOKEN not configured and regular API failed")
+                return False
+
+            try:
+                # First, get the user ID by email
+                url = f"{OPENWEBUI_URL}/api/v1/scim/v2/Users?filter=userName eq \"{user_email}\""
+                headers = {
+                    "Authorization": f"Bearer {SCIM_API_TOKEN}",
+                    "Content-Type": "application/scim+json"
+                }
+
+                response = requests.get(url, headers=headers, timeout=10)
+                if response.status_code != 200:
+                    logger.warning(f"Could not find user {user_email} via SCIM")
+                    return False
+
+                users = response.json().get('Resources', [])
+                if not users:
+                    logger.warning(f"User not found: {user_email}")
+                    return False
+
+                user_id = users[0].get('id')
+
+                # Add user to group using PATCH operation
+                url = f"{OPENWEBUI_URL}/api/v1/scim/v2/Groups/{group_id}"
+                payload = {
+                    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+                    "Operations": [
+                        {
+                            "op": "add",
+                            "path": "members",
+                            "value": [
+                                {
+                                    "value": user_id,
+                                    "display": user_email
+                                }
+                            ]
+                        }
+                    ]
+                }
+
+                response = requests.patch(url, headers=headers, json=payload, timeout=10)
+
+                if response.status_code in [200, 204]:
+                    logger.info(f"Added {user_email} to group {group_id} via SCIM")
+                    return True
+                else:
+                    logger.warning(f"Failed to add {user_email} to group via SCIM: {response.status_code} - {response.text}")
+                    return False
+
+            except Exception as e:
+                logger.error(f"Error adding user {user_email} to group: {e}")
+                return False
+
+        def sync_openprodoc_groups(self) -> bool:
+            """
+            Sync groups and group memberships from OpenProdoc to OpenWebUI.
+            """
+            if not self.db_conn:
+                logger.warning("No database connection for group sync")
+                return False
+
+            try:
+                cursor = self.db_conn.cursor(cursor_factory=RealDictCursor)
+
+                # Query all groups from OpenProdoc
+                query = """
+                    SELECT name, description, acl
+                    FROM pd_groups
+                    ORDER BY name
+                """
+                cursor.execute(query)
+                openprodoc_groups = cursor.fetchall()
+
+                logger.info(f"Found {len(openprodoc_groups)} OpenProdoc groups to sync")
+
+                # Get existing groups from OpenWebUI to avoid duplicates
+                existing_groups = self.get_openwebui_groups()
+                existing_group_map = {}
+                if existing_groups:
+                    for group in existing_groups:
+                        group_name = group.get('displayName') or group.get('name')
+                        group_id = group.get('id')
+                        if group_name and group_id:
+                            existing_group_map[group_name] = group_id
+                    logger.info(f"Found {len(existing_group_map)} existing groups in OpenWebUI")
+
+                # Create groups in OpenWebUI (only if they don't already exist)
+                group_mapping = {}  # Map OpenProdoc group name to OpenWebUI group ID
+                for group in openprodoc_groups:
+                    group_name = group.get('name')
+                    description = group.get('description', '')
+
+                    # Check if group already exists
+                    if group_name in existing_group_map:
+                        group_id = existing_group_map[group_name]
+                        logger.debug(f"Group already exists: {group_name} (ID: {group_id})")
+                        group_mapping[group_name] = group_id
+                    else:
+                        # Create new group
+                        group_id = self.create_openwebui_group_scim(group_name, description)
+                        if group_id:
+                            group_mapping[group_name] = group_id
+
+                # Now sync group memberships
+                query = """
+                    SELECT groupname, username
+                    FROM pd_groupuser
+                    ORDER BY groupname, username
+                """
+                cursor.execute(query)
+                memberships = cursor.fetchall()
+                cursor.close()
+
+                logger.info(f"Syncing {len(memberships)} group memberships")
+
+                for membership in memberships:
+                    group_name = membership.get('groupname')
+                    username = membership.get('username')
+
+                    # Skip system users
+                    if username in ['Install', 'root']:
+                        continue
+
+                    email = f"{username}@openprodoc.local"
+                    group_id = group_mapping.get(group_name)
+
+                    if group_id:
+                        self.add_user_to_group_scim(group_id, email)
+
+                logger.info("Group synchronization completed")
+                return True
+
+            except Exception as e:
+                logger.error(f"Error during group sync: {e}")
+                return False
+
+        def run_group_sync_periodically(self):
+            """Run group sync in background thread."""
+            while True:
+                try:
+                    logger.info("Running periodic group sync...")
+                    self.sync_openprodoc_groups()
+                except Exception as e:
+                    logger.error(f"Group sync failed: {e}")
+
+                # Wait for next sync
+                time.sleep(GROUP_SYNC_INTERVAL)
+
+        def extract_document_id(self, filepath: str) -> Optional[str]:
+            """
+            Extract OpenProdoc document ID from filename.
+            Format: /watch/OPD/19ae4/19ae44a6a3b-3febc97caa3296c7_1.0
+            Returns: 19ae44a6a3b-3febc97caa3296c7
+            """
+            try:
+                filename = os.path.basename(filepath)
+                # Pattern: {doc_id}_{version}
+                match = re.match(r'^([a-f0-9]+-[a-f0-9]+)_', filename)
+                if match:
+                    doc_id = match.group(1)
+                    logger.debug(f"Extracted document ID: {doc_id} from {filename}")
+                    return doc_id
+                else:
+                    logger.warning(f"Could not extract document ID from filename: {filename}")
+                    return None
+            except Exception as e:
+                logger.error(f"Error extracting document ID from {filepath}: {e}")
+                return None
+
+        def query_folder_path(self, folder_id: str) -> str:
+            """
+            Recursively query folder hierarchy to build full path.
+            Returns: "Root/Projects/2024" or similar
+            """
+            if not self.db_conn or not folder_id:
+                return ""
+
+            try:
+                cursor = self.db_conn.cursor(cursor_factory=RealDictCursor)
+                path_parts = []
+                current_id = folder_id
+
+                # Traverse up the folder tree
+                max_depth = 20  # Prevent infinite loops
+                for _ in range(max_depth):
+                    query = """
+                        SELECT title, parentid
+                        FROM pd_folders
+                        WHERE pdid = %s
+                        LIMIT 1
+                    """
+                    cursor.execute(query, (current_id,))
+                    result = cursor.fetchone()
+
+                    if not result:
+                        break
+
+                    folder_name = result.get('title', '')
+                    parent_id = result.get('parentid', '')
+
+                    # Stop at root (RootFolder or empty parent)
+                    if not parent_id or parent_id == current_id or folder_name == 'RootFolder':
+                        if folder_name != 'RootFolder':
+                            path_parts.insert(0, folder_name)
+                        break
+
+                    path_parts.insert(0, folder_name)
+                    current_id = parent_id
+
+                cursor.close()
+                folder_path = '/'.join(path_parts) if path_parts else ''
+                logger.debug(f"Resolved folder path for {folder_id}: {folder_path}")
+                return folder_path
+
+            except Exception as e:
+                logger.error(f"Error querying folder path for {folder_id}: {e}")
+                return ""
+
+        def query_openprodoc_metadata(self, doc_id: str) -> Optional[Dict[str, any]]:
+            """Query OpenProdoc database for document metadata."""
+            if not self.db_conn:
+                logger.warning("No database connection, cannot query metadata")
+                return None
+
+            try:
+                cursor = self.db_conn.cursor(cursor_factory=RealDictCursor)
+
+                # Query pd_docs table for document metadata
+                query = """
+                    SELECT
+                        pdid,
+                        title,
+                        pdautor,
+                        docdate,
+                        version,
+                        pddate,
+                        acl,
+                        parentid,
+                        mimetype
+                    FROM pd_docs
+                    WHERE pdid = %s
+                    LIMIT 1
+                """
+
+                cursor.execute(query, (doc_id,))
+                result = cursor.fetchone()
+                cursor.close()
+
+                if result:
+                    metadata = dict(result)
+
+                    # Get folder path
+                    parent_id = metadata.get('parentid')
+                    if parent_id:
+                        folder_path = self.query_folder_path(parent_id)
+                        metadata['folder_path'] = folder_path
+                    else:
+                        metadata['folder_path'] = ''
+
+                    logger.info(f"Found metadata for {doc_id}: Title='{metadata.get('title')}', Path='{metadata.get('folder_path')}'")
+                    return metadata
+                else:
+                    logger.warning(f"No metadata found for document ID: {doc_id}")
+                    return None
+
+            except Exception as e:
+                logger.error(f"Error querying metadata for {doc_id}: {e}")
+                # Try to reconnect
+                self.connect_to_openprodoc_db()
+                return None
+
+        def create_symlink(self, target_path: str, symlink_name: str) -> Optional[str]:
+            """
+            Create symbolic link in Open WebUI uploads directory.
+            Returns the symlink path if successful, None otherwise.
+            """
+            try:
+                os.makedirs(UPLOADS_DIR, exist_ok=True)
+                symlink_path = os.path.join(UPLOADS_DIR, symlink_name)
+
+                # Remove old symlink if exists
+                if os.path.lexists(symlink_path):
+                    logger.info(f"Removing old symlink: {symlink_path}")
+                    os.remove(symlink_path)
+
+                # Create new symlink
+                os.symlink(target_path, symlink_path)
+                logger.info(f"Created symlink: {symlink_path} -> {target_path}")
+
+                return symlink_path
+
+            except Exception as e:
+                logger.error(f"Failed to create symlink {symlink_name} -> {target_path}: {e}")
+                return None
+
+        def login(self) -> bool:
+            """Login to Open WebUI and get JWT token."""
+            try:
+                url = f"{OPENWEBUI_URL}/api/v1/auths/signin"
+                payload = {
+                    "email": OPENWEBUI_EMAIL,
+                    "password": OPENWEBUI_PASSWORD
+                }
+                logger.info(f"Logging in to Open WebUI as {OPENWEBUI_EMAIL}...")
+                response = requests.post(url, json=payload, timeout=10)
+                response.raise_for_status()
+
+                data = response.json()
+                self.jwt_token = data.get('token')
+                # Set token expiry to 23 hours from now (tokens usually last 24h)
+                self.token_expiry = time.time() + (23 * 3600)
+
+                logger.info("Successfully authenticated with Open WebUI")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to login to Open WebUI: {e}")
+                return False
+
+        def ensure_authenticated(self) -> bool:
+            """Ensure we have a valid JWT token."""
+            # Check if token is expired or about to expire (within 5 minutes)
+            if not self.jwt_token or time.time() > (self.token_expiry - 300):
+                logger.info("Token expired or missing, re-authenticating...")
+                return self.login()
+            return True
+
+        def ensure_knowledge_base(self) -> bool:
+            """Ensure Knowledge Base exists, create if not."""
+            try:
+                if not self.ensure_authenticated():
+                    logger.error("Cannot check Knowledge Base: authentication failed")
+                    return False
+
+                # List existing knowledge bases
+                url = f"{OPENWEBUI_URL}/api/v1/knowledge/"
+                headers = {
+                    "Authorization": f"Bearer {self.jwt_token}",
+                    "Accept": "application/json"
+                }
+
+                logger.info(f"Checking for Knowledge Base: {KNOWLEDGE_BASE_NAME}")
+                response = requests.get(url, headers=headers, timeout=10)
+                response.raise_for_status()
+
+                knowledge_bases = response.json()
+
+                # Search for existing KB with our name
+                for kb in knowledge_bases:
+                    if kb.get('name') == KNOWLEDGE_BASE_NAME:
+                        self.knowledge_base_id = kb.get('id')
+                        logger.info(f"Found existing Knowledge Base: {KNOWLEDGE_BASE_NAME} (ID: {self.knowledge_base_id})")
+                        return True
+
+                # Knowledge Base doesn't exist, create it
+                logger.info(f"Creating Knowledge Base: {KNOWLEDGE_BASE_NAME}")
+                create_url = f"{OPENWEBUI_URL}/api/v1/knowledge/create"
+                create_payload = {
+                    "name": KNOWLEDGE_BASE_NAME,
+                    "description": KNOWLEDGE_BASE_DESC,
+                    "data": {},
+                    "access_control": {}
+                }
+
+                response = requests.post(create_url, headers=headers, json=create_payload, timeout=10)
+                response.raise_for_status()
+
+                result = response.json()
+                self.knowledge_base_id = result.get('id')
+                logger.info(f"Successfully created Knowledge Base: {KNOWLEDGE_BASE_NAME} (ID: {self.knowledge_base_id})")
+                return True
+
+            except Exception as e:
+                logger.error(f"Failed to ensure Knowledge Base: {e}")
+                return False
+
+        def get_folder_hierarchy(self, folder_path: str) -> Tuple[str, str]:
+            """
+            Parse folder path into levels.
+            Example: "Projects/2024/Reports" → ("Projects", "2024/Reports")
+            """
+            if not folder_path:
+                return ("General", "")
+
+            parts = folder_path.split('/')
+            level1 = parts[0] if len(parts) > 0 else "General"
+            remainder = '/'.join(parts[1:]) if len(parts) > 1 else ""
+            return (level1, remainder)
+
+        def build_kb_access_control(self, folder_acl: str = None) -> Dict:
+            """
+            Build access_control structure for Knowledge Base based on folder ACL.
+            Maps OpenProdoc ACL to OpenWebUI group-based permissions.
+
+            Returns: {
+                "read": {"group_ids": [...], "user_ids": [...]},
+                "write": {"group_ids": [...], "user_ids": [...]}
+            }
+            """
+            access_control = {
+                "read": {
+                    "group_ids": [],
+                    "user_ids": []
+                },
+                "write": {
+                    "group_ids": [],
+                    "user_ids": []
+                }
+            }
+
+            # Get current OpenWebUI groups to map ACLs
+            openwebui_groups = self.get_openwebui_groups()
+            if not openwebui_groups:
+                logger.warning("Could not retrieve OpenWebUI groups for access control mapping")
+                return access_control
+
+            # Build group name to ID mapping
+            group_map = {group.get('displayName'): group.get('id') for group in openwebui_groups}
+
+            if not folder_acl or folder_acl == "Public":
+                # Public access: All group gets read access
+                all_group_id = group_map.get('All')
+                if all_group_id:
+                    access_control["read"]["group_ids"].append(all_group_id)
+                    logger.debug(f"Set public read access for 'All' group")
+            elif folder_acl.startswith("U_"):
+                # User-specific ACL (e.g., "U_user1")
+                # This would need individual user mapping - for now, restrict to Administrators
+                admin_group_id = group_map.get('Administrators')
+                if admin_group_id:
+                    access_control["read"]["group_ids"].append(admin_group_id)
+                    access_control["write"]["group_ids"].append(admin_group_id)
+                    logger.debug(f"Set restricted access for Administrators group (ACL: {folder_acl})")
+            else:
+                # Assume it's a group name (e.g., "HR", "Private")
+                group_id = group_map.get(folder_acl)
+                if group_id:
+                    access_control["read"]["group_ids"].append(group_id)
+                    access_control["write"]["group_ids"].append(group_id)
+                    logger.debug(f"Set access for group: {folder_acl}")
+                else:
+                    # Fallback: Grant to Administrators if group not found
+                    admin_group_id = group_map.get('Administrators')
+                    if admin_group_id:
+                        access_control["read"]["group_ids"].append(admin_group_id)
+                        access_control["write"]["group_ids"].append(admin_group_id)
+                        logger.warning(f"Unknown ACL '{folder_acl}', defaulting to Administrators")
+
+            return access_control
+
+        def get_or_create_kb_for_folder(self, folder_level1: str, acl: str = None) -> Optional[str]:
+            """
+            Get or create Knowledge Base for folder level 1.
+            KB Name: "OpenProdoc - {folder_level1}"
+            """
+            kb_name = f"OpenProdoc - {folder_level1}"
+
+            if not self.ensure_authenticated():
+                return None
+
+            # Check if KB exists
+            url = f"{OPENWEBUI_URL}/api/v1/knowledge/"
+            headers = {
+                "Authorization": f"Bearer {self.jwt_token}",
+                "Accept": "application/json"
+            }
+
+            try:
+                response = requests.get(url, headers=headers, timeout=10)
+                response.raise_for_status()
+                knowledge_bases = response.json()
+
+                # Search for existing KB
+                for kb in knowledge_bases:
+                    if kb.get('name') == kb_name:
+                        logger.debug(f"Found existing KB: {kb_name} (ID: {kb.get('id')})")
+                        return kb.get('id')
+
+                # Create new KB with access control
+                logger.info(f"Creating Knowledge Base: {kb_name} (ACL: {acl})")
+                create_url = f"{OPENWEBUI_URL}/api/v1/knowledge/create"
+
+                # Build access control based on folder ACL
+                access_control = self.build_kb_access_control(acl) if acl else {}
+
+                create_payload = {
+                    "name": kb_name,
+                    "description": f"Auto-synced from OpenProdoc folder: {folder_level1}",
+                    "data": {},
+                    "access_control": access_control
+                }
+
+                response = requests.post(create_url, headers=headers, json=create_payload, timeout=10)
+                response.raise_for_status()
+                result = response.json()
+                kb_id = result.get('id')
+                logger.info(f"Successfully created Knowledge Base: {kb_name} (ID: {kb_id})")
+                return kb_id
+
+            except Exception as e:
+                logger.error(f"Failed to get/create KB for folder {folder_level1}: {e}")
+                return None
+
+        def remove_file_from_knowledge_base(self, file_id: str, filename: str) -> bool:
+            """Remove a file from the Knowledge Base."""
+            try:
+                if not self.knowledge_base_id:
+                    logger.warning("No Knowledge Base ID available, skipping KB removal")
+                    return False
+
+                if not self.ensure_authenticated():
+                    logger.error("Cannot remove file from KB: authentication failed")
+                    return False
+
+                # Remove file from Knowledge Base
+                url = f"{OPENWEBUI_URL}/api/v1/knowledge/{self.knowledge_base_id}/file/remove"
+                headers = {
+                    "Authorization": f"Bearer {self.jwt_token}",
+                    "Content-Type": "application/json"
+                }
+
+                payload = {
+                    "file_id": file_id
+                }
+
+                logger.info(f"Removing file {filename} (ID: {file_id}) from Knowledge Base...")
+                response = requests.post(url, headers=headers, json=payload, timeout=30)
+                response.raise_for_status()
+
+                logger.info(f"Successfully removed {filename} from Knowledge Base")
+                return True
+
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 404:
+                    logger.warning(f"File {file_id} not found in KB (may have been already removed)")
+                    return True
+                # Handle 400 errors that indicate file not found
+                if e.response.status_code == 400:
+                    error_text = e.response.text
+                    # Check for common "not found" error messages
+                    if any(msg in error_text for msg in ["ERROR: file_id", "could not find", "not found"]):
+                        logger.warning(f"File {file_id} not found in KB (400 error: {error_text})")
+                        return True
+                logger.error(f"HTTP error removing file from KB: {e.response.status_code} - {e.response.text}")
+                return False
+            except Exception as e:
+                logger.error(f"Error removing file from Knowledge Base: {e}")
+                return False
+
+        def enrich_filename_with_metadata(self, friendly_name: str, metadata: Dict) -> str:
+            """
+            Enrich filename with ACL and author metadata.
+            Example: "Report.pdf" → "Report [ACL-Private][Author-john_doe].pdf"
+            """
+            if not metadata:
+                return friendly_name
+
+            acl = metadata.get('acl', 'Unknown')
+            author = metadata.get('pdautor', 'Unknown')
+
+            # Parse filename
+            name, ext = os.path.splitext(friendly_name)
+
+            # Add metadata tags
+            enriched = f"{name} [ACL-{acl}][Author-{author}]{ext}"
+
+            logger.debug(f"Enriched filename: {friendly_name} → {enriched}")
+            return enriched
+
+        def add_file_to_knowledge_base(self, file_id: str, filename: str) -> bool:
+            """Add an uploaded file to the Knowledge Base."""
+            try:
+                if not self.knowledge_base_id:
+                    logger.warning("No Knowledge Base ID available, skipping KB addition")
+                    return False
+
+                if not self.ensure_authenticated():
+                    logger.error("Cannot add file to KB: authentication failed")
+                    return False
+
+                # Add file to Knowledge Base
+                url = f"{OPENWEBUI_URL}/api/v1/knowledge/{self.knowledge_base_id}/file/add"
+                headers = {
+                    "Authorization": f"Bearer {self.jwt_token}",
+                    "Content-Type": "application/json"
+                }
+
+                payload = {
+                    "file_id": file_id
+                }
+
+                logger.info(f"Adding file {filename} (ID: {file_id}) to Knowledge Base...")
+                response = requests.post(url, headers=headers, json=payload, timeout=30)
+                response.raise_for_status()
+
+                logger.info(f"Successfully added {filename} to Knowledge Base")
+                return True
+
+            except requests.exceptions.HTTPError as e:
+                # Handle duplicate content error (should rarely happen since we delete old versions first)
+                if e.response.status_code == 400 and "Duplicate content" in e.response.text:
+                    logger.warning(f"Duplicate content detected for {filename}")
+                    # This shouldn't happen for version updates since we delete old versions first.
+                    # If it does, the content is already indexed, so treat as success.
+                    return True
+                logger.error(f"HTTP error adding file to KB: {e.response.status_code} - {e.response.text}")
+                return False
+            except Exception as e:
+                logger.error(f"Error adding file to Knowledge Base: {e}")
+                return False
+
+        def delete_file_from_openwebui(self, file_id: str, filename: str) -> bool:
+            """Delete a file from Open WebUI."""
+            try:
+                if not self.ensure_authenticated():
+                    logger.error("Cannot delete file: authentication failed")
+                    return False
+
+                # Delete file from Open WebUI
+                url = f"{OPENWEBUI_URL}/api/v1/files/{file_id}"
+                headers = {
+                    "Authorization": f"Bearer {self.jwt_token}",
+                    "Accept": "application/json"
+                }
+
+                logger.info(f"Deleting old version of {filename} (ID: {file_id}) from Open WebUI...")
+                response = requests.delete(url, headers=headers, timeout=10)
+                response.raise_for_status()
+
+                logger.info(f"Successfully deleted old version: {filename}")
+                return True
+
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 404:
+                    logger.warning(f"File {file_id} not found (may have been already deleted)")
+                    return True  # Consider this success
+                logger.error(f"HTTP error deleting file: {e.response.status_code} - {e.response.text}")
+                return False
+            except Exception as e:
+                logger.error(f"Error deleting file from Open WebUI: {e}")
+                return False
+
+        def get_file_hash(self, filepath: str) -> str:
+            """Calculate MD5 hash of file content."""
+            try:
+                hash_md5 = hashlib.md5()
+                with open(filepath, "rb") as f:
+                    for chunk in iter(lambda: f.read(4096), b""):
+                        hash_md5.update(chunk)
+                return hash_md5.hexdigest()
+            except Exception as e:
+                logger.error(f"Error calculating hash for {filepath}: {e}")
+                return ""
+
+        def detect_file_type(self, filepath: str) -> Optional[Tuple[str, str]]:
+            """
+            Detect file type by content and return (mime_type, extension).
+            Returns None if file type is not supported.
+
+            Strategy:
+            1. Always detect MIME type from file content (not from filename)
+            2. Map MIME type to appropriate extension
+            3. Fallback to text/plain if content appears to be text but MIME is unknown
+            """
+            path = Path(filepath)
+
+            # Detect MIME type by content (NOT by filename extension)
+            try:
+                if HAS_MAGIC:
+                    # Use python-magic for accurate detection
+                    mime_type = magic.from_file(filepath, mime=True)
+                else:
+                    # Fallback: read file header and guess
+                    mime_type = self._detect_mime_fallback(filepath)
+
+                # Map MIME type to extension
+                if mime_type in MIME_TO_EXTENSION:
+                    extension = MIME_TO_EXTENSION[mime_type]
+                    logger.info(f"Detected {filepath}: {mime_type} -> {extension}")
+                    return (mime_type, extension)
+
+                # If MIME type is text/* but not in our mapping, use .txt
+                if mime_type and mime_type.startswith('text/'):
+                    logger.info(f"Detected {filepath}: {mime_type} -> .txt (generic text)")
+                    return (mime_type, '.txt')
+
+            except Exception as e:
+                logger.warning(f"Could not detect MIME type for {filepath}: {e}")
+
+            return None
+
+        def _detect_mime_fallback(self, filepath: str) -> Optional[str]:
+            """Fallback MIME detection using file signatures."""
+            try:
+                with open(filepath, 'rb') as f:
+                    header = f.read(512)
+
+                # PDF signature
+                if header.startswith(b'%PDF'):
+                    return 'application/pdf'
+
+                # ZIP-based formats (DOCX, etc.)
+                if header.startswith(b'PK\x03\x04'):
+                    # Check for DOCX
+                    if b'word/' in header or b'[Content_Types].xml' in header:
+                        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
+                # DOC signature
+                if header.startswith(b'\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1'):
+                    return 'application/msword'
+
+                # HTML
+                if b'<html' in header.lower() or b'<!doctype html' in header.lower():
+                    return 'text/html'
+
+                # XML
+                if header.strip().startswith(b'<?xml'):
+                    return 'text/xml'
+
+                # RTF
+                if header.startswith(b'{\\rtf'):
+                    return 'application/rtf'
+
+                # Try to decode as text
+                try:
+                    header.decode('utf-8')
+                    # Check for common text-based formats
+                    header_str = header.decode('utf-8', errors='ignore')
+
+                    # JSON detection
+                    if header_str.strip().startswith('{'):
+                        return 'application/json'
+
+                    # CSV detection - must have multiple lines with consistent comma pattern
+                    # A real CSV has commas as delimiters on multiple lines
+                    lines = header_str.split('\n')
+                    if len(lines) >= 3:  # Need at least 3 lines for CSV
+                        comma_counts = [line.count(',') for line in lines[:10] if line.strip()]
+                        # If most lines have commas AND they're relatively consistent, it's likely CSV
+                        if len(comma_counts) >= 3 and max(comma_counts) > 0:
+                            # Check if comma counts are consistent (within 1-2 of each other)
+                            avg_commas = sum(comma_counts) / len(comma_counts)
+                            if avg_commas >= 1 and all(abs(c - avg_commas) <= 2 for c in comma_counts):
+                                return 'text/csv'
+
+                    # Default to plain text
+                    return 'text/plain'
+
+                except UnicodeDecodeError:
+                    pass
+
+            except Exception as e:
+                logger.debug(f"Fallback detection failed for {filepath}: {e}")
+
+            return None
+
+        def find_latest_version(self, filepath: str) -> Optional[str]:
+            """
+            Find the latest version file for a given document ID.
+            Returns the path to the latest version, or None if not found.
+            """
+            try:
+                doc_id = self.extract_document_id(filepath)
+                if not doc_id:
+                    return None
+
+                # Find all files with the same doc_id in the same directory
+                directory = os.path.dirname(filepath)
+                pattern = f"{doc_id}_*"
+                matching_files = []
+
+                for filename in os.listdir(directory):
+                    if filename.startswith(f"{doc_id}_"):
+                        full_path = os.path.join(directory, filename)
+                        if os.path.isfile(full_path):
+                            matching_files.append(full_path)
+
+                if not matching_files:
+                    return None
+
+                # Sort by modification time (newest first)
+                matching_files.sort(key=lambda f: os.path.getmtime(f), reverse=True)
+
+                latest_file = matching_files[0]
+                logger.debug(f"Latest version for {doc_id}: {latest_file}")
+                return latest_file
+
+            except Exception as e:
+                logger.error(f"Error finding latest version for {filepath}: {e}")
+                return None
+
+        def should_process_file(self, filepath: str) -> bool:
+            """Check if file should be processed."""
+            path = Path(filepath)
+
+            # Check if file exists and is readable
+            if not path.exists() or not path.is_file():
+                return False
+
+            # Skip hidden files and system files
+            if path.name.startswith('.'):
+                return False
+
+            # Skip OpenProdoc temporary files (used during version updates)
+            # Files ending in _root are temporary and will be renamed to final version
+            if path.name.endswith('_root'):
+                logger.debug(f"Skipping OpenProdoc temporary file: {filepath}")
+                return False
+
+            # Skip old versions - only process the latest version of each document
+            latest_version = self.find_latest_version(filepath)
+            if latest_version and latest_version != filepath:
+                logger.debug(f"Skipping old version {filepath}, latest is {latest_version}")
+                return False
+
+            # Skip OpenProdoc internal system files (RIS/CSV export format)
+            try:
+                with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                    # Check first 5 lines for system file markers
+                    for i, line in enumerate(f):
+                        if i >= 5:
+                            break
+                        line = line.strip()
+                        # Check for @OPD_DOCSLOOP marker (RIS export)
+                        if '@OPD_DOCSLOOP' in line:
+                            logger.debug(f"Skipping OpenProdoc RIS export file: {filepath}")
+                            return False
+                        # Check for CSV export header (line 1 only)
+                        if i == 0 and line.startswith('DocType;Title;Version;'):
+                            logger.debug(f"Skipping OpenProdoc CSV export file: {filepath}")
+                            return False
+            except Exception as e:
+                logger.warning(f"Could not read file header of {filepath}: {e}")
+
+            # Detect file type
+            file_type_info = self.detect_file_type(filepath)
+            if not file_type_info:
+                logger.debug(f"Skipping unsupported file: {filepath}")
+                return False
+
+            # Check if file has changed
+            current_hash = self.get_file_hash(filepath)
+            if not current_hash:
+                return False
+
+            previous_hash = self.processed_files.get(filepath)
+            if current_hash == previous_hash:
+                return False
+
+            logger.info(f"File to process: {filepath} (type: {file_type_info[0]})")
+            return True
+
+        def ingest_document(self, filepath: str) -> bool:
+            """Process document using symbolic links to avoid duplication."""
+            try:
+                # Ensure we have a valid token
+                if not self.ensure_authenticated():
+                    logger.error("Cannot process document: authentication failed")
+                    return False
+
+                # Extract OpenProdoc document ID
+                doc_id = self.extract_document_id(filepath)
+                if not doc_id:
+                    logger.warning(f"Cannot extract document ID from: {filepath}, skipping")
+                    return False
+
+                # Query OpenProdoc metadata
+                metadata = self.query_openprodoc_metadata(doc_id)
+
+                # Determine friendly filename
+                if metadata and metadata.get('title'):
+                    # Use title from database
+                    title = metadata.get('title')
+                    folder_path = metadata.get('folder_path', '')
+
+                    # Get extension from mimetype or detect from file
+                    if metadata.get('mimetype') and metadata.get('mimetype') in MIME_TO_EXTENSION:
+                        extension = MIME_TO_EXTENSION[metadata.get('mimetype')]
+                    else:
+                        file_type_info = self.detect_file_type(filepath)
+                        if file_type_info:
+                            extension = file_type_info[1]
+                        else:
+                            logger.warning(f"Cannot detect file type for: {filepath}, skipping")
+                            return False
+
+                    # Build full path with folder structure
+                    # Use the real title (not sanitized) and add folder path
+                    if folder_path:
+                        friendly_name = f"{folder_path}/{title}{extension}"
+                    else:
+                        friendly_name = f"{title}{extension}"
+
+                    # Replace path separators that can't be used in filenames
+                    friendly_name = friendly_name.replace('/', '_')
+
+                    mime_type = metadata.get('mimetype', 'application/octet-stream')
+                    logger.info(f"Using full path filename: {friendly_name}")
+
+                else:
+                    # Fallback to filename-based detection
+                    file_type_info = self.detect_file_type(filepath)
+                    if not file_type_info:
+                        logger.warning(f"Cannot detect file type for: {filepath}, skipping")
+                        return False
+
+                    mime_type, extension = file_type_info
+                    base_name = Path(filepath).stem
+                    friendly_name = f"{base_name}{extension}"
+
+                # Determine Knowledge Base based on folder path
+                folder_path = metadata.get('folder_path', '') if metadata else ''
+                folder_level1, _ = self.get_folder_hierarchy(folder_path)
+                acl = metadata.get('acl') if metadata else None
+
+                # Get or create folder-specific KB
+                kb_id = self.get_or_create_kb_for_folder(folder_level1, acl)
+                if not kb_id:
+                    logger.warning(f"Could not get/create KB for folder: {folder_level1}")
+                    kb_id = self.knowledge_base_id  # Fallback to default
+
+                # Enrich filename with metadata if enabled
+                if os.getenv('ENRICH_FILENAME', 'false').lower() == 'true' and metadata:
+                    friendly_name = self.enrich_filename_with_metadata(friendly_name, metadata)
+
+                # Check if this is a version update
+                existing_symlink = self.symlink_map.get(doc_id)
+                is_version_update = False
+                if existing_symlink:
+                    logger.info(f"Document {doc_id} already has symlink: {existing_symlink.get('symlink_name')}")
+                    # Use existing symlink name for version updates
+                    friendly_name = existing_symlink.get('symlink_name')
+                    logger.info(f"Updating to new version: {filepath}")
+                    is_version_update = True
+
+                    # Delete old version from Open WebUI and Knowledge Base first
+                    old_file_id = existing_symlink.get('file_id')
+                    if old_file_id:
+                        # Remove from Knowledge Base first
+                        kb_removed = self.remove_file_from_knowledge_base(old_file_id, friendly_name)
+                        # Then delete the file entry
+                        file_deleted = self.delete_file_from_openwebui(old_file_id, friendly_name)
+
+                        # Check if deletion succeeded
+                        if not kb_removed or not file_deleted:
+                            logger.error(f"Failed to delete old version for {doc_id} (KB removed: {kb_removed}, File deleted: {file_deleted})")
+                            logger.error(f"Skipping update to avoid duplicates in Knowledge Base")
+                            return False
+
+                        # Wait for deletion to complete (embeddings removal, index updates, etc.)
+                        logger.info(f"Waiting {DELETION_WAIT} seconds for deletion to complete...")
+                        time.sleep(DELETION_WAIT)
+
+                # Create symbolic link
+                symlink_path = self.create_symlink(filepath, friendly_name)
+                if not symlink_path:
+                    logger.error(f"Failed to create symlink for {filepath}")
+                    return False
+
+                logger.info(f"Processing document via symlink: {symlink_path} ({mime_type})")
+
+                # Upload symlink to Open WebUI
+                # When Python opens the symlink, it will read from OpenProdoc storage
+                url = f"{OPENWEBUI_URL}/api/v1/files/"
+                headers = {
+                    "Authorization": f"Bearer {self.jwt_token}",
+                    "Accept": "application/json"
+                }
+
+                with open(symlink_path, 'rb') as f:
+                    files = {
+                        'file': (friendly_name, f, mime_type)
+                    }
+                    response = requests.post(url, headers=headers, files=files, timeout=30)
+                    response.raise_for_status()
+
+                result = response.json()
+                file_id = result.get('id', 'unknown')
+                logger.info(f"Successfully registered: {friendly_name} (ID: {file_id})")
+
+                # Update symlink map
+                self.symlink_map[doc_id] = {
+                    'symlink_name': friendly_name,
+                    'symlink_path': symlink_path,
+                    'target_path': filepath,
+                    'file_id': file_id
+                }
+                self.save_symlink_map()
+
+                # Wait for Open WebUI to finish processing the file
+                logger.info(f"Waiting {PROCESSING_WAIT} seconds for file processing to complete...")
+                time.sleep(PROCESSING_WAIT)
+
+                # Add file to folder-specific Knowledge Base
+                if not self.ensure_authenticated():
+                    logger.error("Cannot add file to KB: authentication failed")
+                    return False
+
+                url = f"{OPENWEBUI_URL}/api/v1/knowledge/{kb_id}/file/add"
+                headers = {
+                    "Authorization": f"Bearer {self.jwt_token}",
+                    "Content-Type": "application/json"
+                }
+                payload = {"file_id": file_id}
+
+                try:
+                    logger.info(f"Adding file {friendly_name} (ID: {file_id}) to KB: {folder_level1}...")
+                    response = requests.post(url, headers=headers, json=payload, timeout=30)
+                    response.raise_for_status()
+                    logger.info(f"Successfully added {friendly_name} to KB: {folder_level1}")
+                except requests.exceptions.HTTPError as e:
+                    # Handle duplicate content error
+                    if e.response.status_code == 400 and "Duplicate content" in e.response.text:
+                        logger.warning(f"Duplicate content detected for {friendly_name}")
+                        # Content is already indexed, treat as success
+                    else:
+                        logger.error(f"HTTP error adding file to KB: {e.response.status_code} - {e.response.text}")
+                        return False
+                except Exception as e:
+                    logger.error(f"Error adding file to Knowledge Base: {e}")
+                    return False
+
+                # Update processed files state
+                self.processed_files[filepath] = self.get_file_hash(filepath)
+                self.save_state()
+
+                if is_version_update:
+                    logger.info(f"✓ Successfully updated {friendly_name} to new version via symlink")
+                else:
+                    logger.info(f"✓ Successfully processed {friendly_name} via symlink (no duplication)")
+                return True
+
+            except requests.exceptions.HTTPError as e:
+                logger.error(f"HTTP error processing {filepath}: {e.response.status_code} - {e.response.text}")
+                return False
+            except Exception as e:
+                logger.error(f"Error processing {filepath}: {e}")
+                return False
+
+        def on_created(self, event: FileSystemEvent):
+            """Handle file creation events."""
+            if not event.is_directory:
+                self.pending_files.add(event.src_path)
+                logger.debug(f"File created: {event.src_path}")
+
+        def on_modified(self, event: FileSystemEvent):
+            """Handle file modification events."""
+            if not event.is_directory:
+                self.pending_files.add(event.src_path)
+                logger.debug(f"File modified: {event.src_path}")
+
+        def process_pending_files(self):
+            """Process all pending files."""
+            while self.pending_files:
+                filepath = self.pending_files.pop()
+
+                # Wait a bit to ensure file is fully written
+                time.sleep(FILE_WRITE_WAIT)
+
+                if self.should_process_file(filepath):
+                    self.ingest_document(filepath)
+
+        def scan_existing_files(self):
+            """Scan existing files on startup."""
+            logger.info(f"Scanning existing files in {WATCH_PATH}...")
+            try:
+                for root, _, files in os.walk(WATCH_PATH):
+                    for filename in files:
+                        filepath = os.path.join(root, filename)
+                        if self.should_process_file(filepath):
+                            logger.info(f"Found new/modified file: {filepath}")
+                            self.ingest_document(filepath)
+                logger.info("Initial scan completed")
+            except Exception as e:
+                logger.error(f"Error during initial scan: {e}")
+
+    def main():
+        """Main execution function."""
+        logger.info("OpenProdoc Storage Watcher with Auto-RAG starting...")
+        logger.info(f"Watch path: {WATCH_PATH}")
+        logger.info(f"Open WebUI URL: {OPENWEBUI_URL}")
+        logger.info(f"Open WebUI User: {OPENWEBUI_EMAIL}")
+        logger.info(f"Knowledge Base: {KNOWLEDGE_BASE_NAME}")
+        logger.info(f"Poll interval: {POLL_INTERVAL}s")
+
+        # Check if watch path exists
+        if not os.path.exists(WATCH_PATH):
+            logger.error(f"Watch path does not exist: {WATCH_PATH}")
+            return
+
+        # Create watcher
+        watcher = DocumentWatcher()
+
+        # Scan existing files
+        watcher.scan_existing_files()
+
+        # Set up file system observer
+        observer = Observer()
+        observer.schedule(watcher, WATCH_PATH, recursive=True)
+        observer.start()
+        logger.info("File system watcher started")
+
+        # Start user sync thread if enabled
+        if os.getenv('SYNC_USERS', 'false').lower() == 'true':
+            logger.info("Starting user synchronization thread...")
+            import threading
+            sync_thread = threading.Thread(target=watcher.run_user_sync_periodically)
+            sync_thread.daemon = True
+            sync_thread.start()
+
+            # Run initial sync
+            logger.info("Running initial user sync...")
+            watcher.sync_openprodoc_users()
+
+        # Start group sync thread if enabled
+        if os.getenv('SYNC_GROUPS', 'false').lower() == 'true':
+            logger.info("Starting group synchronization thread...")
+            import threading
+            group_sync_thread = threading.Thread(target=watcher.run_group_sync_periodically)
+            group_sync_thread.daemon = True
+            group_sync_thread.start()
+
+            # Run initial sync
+            logger.info("Running initial group sync...")
+            watcher.sync_openprodoc_groups()
+
+        try:
+            poll_counter = 0
+            while True:
+                try:
+                    time.sleep(POLL_INTERVAL)
+                    watcher.process_pending_files()
+
+                    # Periodic full rescan every 5 poll intervals to catch missed files
+                    poll_counter += 1
+                    if poll_counter >= 5:
+                        logger.info("Running periodic rescan to detect any missed files...")
+                        watcher.scan_existing_files()
+                        poll_counter = 0
+                except Exception as e:
+                    logger.error(f"Error in main loop: {e}", exc_info=True)
+                    # Continue running despite errors
+                    time.sleep(5)  # Brief pause before retrying
+        except KeyboardInterrupt:
+            logger.info("Stopping watcher...")
+            observer.stop()
+
+        observer.join()
+        logger.info("Watcher stopped")
+
+    if __name__ == "__main__":
+        main()
+{{- end }}

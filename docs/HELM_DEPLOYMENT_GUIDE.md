@@ -37,6 +37,7 @@ helm version
 
 ```
 
+
 ---
 
 ## Installation Methods
@@ -60,9 +61,8 @@ helm repo add openprodoc https://egenillo.github.io/helm-charts/
 # Update repository index
 helm repo update
 
-# Install PostgreSQL (if needed)
-helm repo add bitnami https://charts.bitnami.com/bitnami
-helm install openprodoc-postgresql bitnami/postgresql \
+# Install PostgreSQL from the OpenProdoc repository
+helm install openprodoc-postgresql openprodoc/openprodoc-postgresql \
   --set auth.username=user1 \
   --set auth.password=pass1 \
   --set auth.database=prodoc
@@ -118,9 +118,8 @@ helm pull openprodoc/openprodoc --version 1.0.0
 # Option B: Download directly from GitHub releases
 # curl -LO https://egenillo.github.io/helm-charts/openprodoc-1.0.0.tgz
 
-# Install PostgreSQL (if needed)
-helm repo add bitnami https://charts.bitnami.com/bitnami
-helm install openprodoc-postgresql bitnami/postgresql \
+# Install PostgreSQL from the OpenProdoc repository
+helm install openprodoc-postgresql openprodoc/openprodoc-postgresql \
   --set auth.username=user1 \
   --set auth.password=pass1 \
   --set auth.database=prodoc
@@ -190,7 +189,7 @@ coreEngine:           # Core application settings
 
 **Pull image manually**:
 ```bash
-docker pull openprodoc/core-engine:latest:latest
+docker pull openprodoc/core-engine:latest
 ```
 
 
@@ -209,13 +208,12 @@ k3d cluster create openprodoc-dev \
   --agents 2 \
   --port "8080:80@loadbalancer"
 
-# Add Helm repositories
+# Add Helm repository
 helm repo add openprodoc https://egenillo.github.io/helm-charts/
-helm repo add bitnami https://charts.bitnami.com/bitnami
 helm repo update
 
-# Deploy PostgreSQL
-helm install openprodoc-postgresql bitnami/postgresql \
+# Deploy PostgreSQL from the OpenProdoc repository
+helm install openprodoc-postgresql openprodoc/openprodoc-postgresql \
   --set auth.username=user1 \
   --set auth.password=pass1 \
   --set auth.database=prodoc
@@ -239,9 +237,8 @@ Check Production deployment guide for details.
 # Create production namespace
 kubectl create namespace production
 
-# Add Helm repositories
+# Add Helm repository
 helm repo add openprodoc https://egenillo.github.io/helm-charts/
-helm repo add bitnami https://charts.bitnami.com/bitnami
 helm repo update
 
 # Create secrets for sensitive data
@@ -251,8 +248,8 @@ kubectl create secret generic openprodoc-secrets \
   --from-literal=root-password='YourAdminPassword456!' \
   --from-literal=main-key='YourEncryptionKey32CharsLong!'
 
-# Deploy PostgreSQL
-helm install openprodoc-postgresql bitnami/postgresql \
+# Deploy PostgreSQL from the OpenProdoc repository
+helm install openprodoc-postgresql openprodoc/openprodoc-postgresql \
   --namespace production \
   --set auth.username=prodoc \
   --set auth.password='YourStrongDBPassword123!' \
@@ -294,8 +291,7 @@ helm install openprodoc openprodoc/openprodoc \
   --set coreEngine.persistence.size=500Gi \
   --set coreEngine.config.database.user='YourAdminDBUser' \
   --set coreEngine.config.database.password='YourPasswordDBUser' \
-  --set coreEngine.install.rootPassword=ad'YourPasswordRootUser' \
-  --set coreEngine.config.database.password=pass1
+  --set coreEngine.install.rootPassword='YourPasswordRootUser'
 ```
 
 
@@ -311,7 +307,7 @@ helm install openprodoc openprodoc/openprodoc \
   --set coreEngine.persistence.size=10Gi \
   --set coreEngine.config.database.user='YourAdminDBUser' \
   --set coreEngine.config.database.password='YourPasswordDBUser' \
-  --set coreEngine.install.rootPassword=ad'YourPasswordRootUser' 
+  --set coreEngine.install.rootPassword='YourPasswordRootUser'
 
 ```
 

@@ -136,7 +136,7 @@ kubectl get pods -n openprodoc -w
 The first time you access to OpenWebUI interface you will be requested to create the admin user.
 
 **IMPORTANT**: After deployment, you must create a user called `watcher` in OpenProdoc.
-**IMPORTANT**: After deployment, you must create an ADMIN  user in Openwebui with the following credentials   email: watcher / watcher@openprodoc.local / password: 12345678 . The password for watcher user must match the one in the values file , that password can be changed using the parameter openwebui.watcher.config.password before deployment.
+**IMPORTANT**: After deployment, you must create an ADMIN  user in Openwebui with the following credentials   user: watcher / email: watcher@openprodoc.local / password: 12345678 . The password for watcher user must match the one in the values file , that password can be changed using the parameter openwebui.watcher.config.password before deployment.
 
 The RAG system will only index and process documents that the user `watcher` in Openprodoc has READ access to. This provides fine-grained control over which documents are available for AI-powered search and question-answering.
 

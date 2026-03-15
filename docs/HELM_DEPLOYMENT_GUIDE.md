@@ -101,7 +101,7 @@ helm install openprodoc-postgresql ./helm/postgresql \
 # Navigate to helm chart directory
 
 # Install OpenProdoc
-helm install openprodoc ./openprodoc \
+helm install openprodoc ./helm/openprodoc \
   --namespace default \
   --set coreEngine.config.database.user=user1 \
   --set coreEngine.config.database.password=pass1 \

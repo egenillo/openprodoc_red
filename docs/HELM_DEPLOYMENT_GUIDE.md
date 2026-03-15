@@ -181,17 +181,76 @@ coreEngine:           # Core application settings
   resources:          # CPU/Memory limits
 ```
 
-### Docker deployment
+### Docker Compose Deployment
 
-####  Docker information
+Docker Compose provides a simpler alternative to Kubernetes for local development and single-server deployments. The `docker/docker-compose.yml` deploys the full solution with all components.
 
-**Docker Hub**: Images are available at `openprodoc/core-engine`
+#### Services Deployed
 
-**Pull image manually**:
+| Service | Image | Host Port | Description |
+|---|---|---|---|
+| `postgres` | postgres:16-alpine | 5432 | OpenProdoc database |
+| `core-engine` | openprodoc/core-engine:latest | **8081** | OpenProdoc backend + web UI |
+| `pgvector` | pgvector/pgvector:pg16 | (internal) | Vector database for RAG |
+| `ollama` | ollama/ollama:0.5.4 | (internal) | LLM and embedding engine |
+| `ollama-pull-models` | curlimages/curl | - | One-shot model puller |
+| `openwebui` | ghcr.io/open-webui/open-webui:main | **8080** | RAG interface |
+| `watcher` | openprodoc/openprodoc_rag:1.0.1 | (internal) | Doc/user/group sync |
+
+#### Quick Start with Docker Compose
+
 ```bash
-docker pull openprodoc/core-engine:latest
+# Navigate to docker directory
+cd docker/
+
+# Start all services
+docker compose up -d
+
+# Monitor startup
+docker compose logs -f
+
+# Access the services:
+# OpenProdoc:  http://localhost:8081/ProdocWeb2/
+# OpenWebUI:   http://localhost:8080
 ```
 
+#### Stopping and Cleanup
+
+```bash
+# Stop all services (preserves data)
+docker compose stop
+
+# Stop and remove containers (preserves volumes)
+docker compose down
+
+# Stop and remove everything including data
+docker compose down -v
+```
+
+#### Docker Hub Images
+
+Images are available at:
+- `openprodoc/core-engine` - OpenProdoc Core Engine
+- `openprodoc/openprodoc_rag` - RAG Watcher sidecar
+
+**Pull images manually**:
+```bash
+docker pull openprodoc/core-engine:latest
+docker pull openprodoc/openprodoc_rag:1.0.1
+```
+
+#### Key Differences: Docker Compose vs Kubernetes
+
+| Feature | Docker Compose | Kubernetes (Helm) |
+|---|---|---|
+| Watcher deployment | Separate container | Sidecar in OpenWebUI pod |
+| Scaling | Single instance | Multi-replica with HA |
+| Secrets | Plain text env vars | Kubernetes Secrets |
+| Service discovery | Docker DNS | Kubernetes Services |
+| Storage | Docker volumes | PersistentVolumeClaims |
+| Health checks | Docker healthcheck | Liveness/readiness probes |
+| Init containers | One-shot service | Native init containers |
+| Ingress | Port mapping | Traefik/nginx ingress |
 
 ---
 

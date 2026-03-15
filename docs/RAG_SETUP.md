@@ -12,6 +12,8 @@ The RAG solution extends OpenProdoc with AI-powered document search and question
 
 ## Architecture
 
+### Kubernetes (Helm) Architecture
+
 ```
 ┌─────────────────┐
 │  OpenProdoc     │
@@ -37,6 +39,26 @@ The RAG solution extends OpenProdoc with AI-powered document search and question
     └─────────┘        └──────────┘
 ```
 
+### Docker Compose Architecture
+
+```
+┌─────────────────┐     ┌─────────────────┐
+│  OpenProdoc     │     │    Watcher       │
+│  Core Engine    │     │  (separate       │
+│  :8081          │     │   container)     │
+└────────┬────────┘     └──────┬───────────┘
+         │                     │
+         │ Shared Volume       │ Monitors & Ingests
+         │ (Read-Only)         │
+         ▼                     ▼
+┌─────────────────┐     ┌──────────┐     ┌──────────┐
+│  Open WebUI     │────▶│ Ollama   │     │ PGVector │
+│  :8080          │     │  (LLM)   │     │ (Vectors)│
+└─────────────────┘     └──────────┘     └──────────┘
+```
+
+In Docker Compose, the watcher runs as a separate container (not a sidecar) and connects to Open WebUI via the Docker network.
+
 ## Components
 
 ### 1. PGVector (Vector Database)
@@ -48,10 +70,10 @@ The RAG solution extends OpenProdoc with AI-powered document search and question
 
 ### 2. Ollama (LLM Engine)
 
-- **Image**: `ollama/ollama:latest`
+- **Image**: `ollama/ollama:0.5.4`
 - **Models**:
-  - LLM: `llama3:8b` (or `phi3` for lower resource usage)
-  - Embeddings: `all-minilm` (lightweight, CPU-optimized)
+  - LLM: `llama3.1:latest` (or `phi3` for lower resource usage)
+  - Embeddings: `nomic-embed-text:latest` (lightweight, CPU-optimized)
 - **Storage**: 50Gi for models
 - **Resources**: 2-4 CPU cores, 4-8Gi RAM
 
@@ -65,15 +87,39 @@ The RAG solution extends OpenProdoc with AI-powered document search and question
 - **Storage**: 5Gi for metadata
 - **Resources**: 500m-2000m CPU, 1-4Gi RAM
 
-### 4. Watcher Sidecar
+### 4. RAG Watcher
 
-- **Purpose**: Monitors OpenProdoc storage and automatically ingests new documents
+- **Image**: `openprodoc/openprodoc_rag:1.0.1`
+- **Purpose**: Monitors OpenProdoc storage and automatically ingests new documents. Also synchronizes users and groups from OpenProdoc to Open WebUI via SCIM API.
+- **Deployment**: Runs as a sidecar container (Kubernetes) or separate container (Docker Compose)
 - **Supported Formats**: txt, md, pdf, doc, docx, html, json, csv, xml
 - **Resources**: 100m-200m CPU, 128-256Mi RAM
 
 ## Deployment
 
-### Step 1: Configure Values
+### Option A: Docker Compose (Recommended for Development)
+
+The simplest way to deploy the full RAG solution:
+
+```bash
+cd docker/
+
+# Start all services
+docker compose up -d
+
+# Monitor startup (Ollama model pull can take several minutes)
+docker compose logs -f
+
+# Access:
+# OpenProdoc:  http://localhost:8081/ProdocWeb2/
+# Open WebUI:  http://localhost:8080
+```
+
+The docker-compose.yml deploys all 7 services with correct startup ordering and health checks. The watcher runs as a separate container and connects to Open WebUI via the Docker network.
+
+### Option B: Kubernetes (Helm)
+
+#### Step 1: Configure Values
 
 Edit `values.yaml` to enable and configure the RAG components:
 
@@ -86,8 +132,8 @@ ollama:
   enabled: true
   config:
     models:
-      llm: "llama3:8b"  # or "phi3" for smaller deployments
-      embedding: "all-minilm"
+      llm: "llama3.1:latest"  # or "phi3" for smaller deployments
+      embedding: "nomic-embed-text:latest"
 
 openwebui:
   enabled: true
@@ -95,7 +141,7 @@ openwebui:
     enabled: true
 ```
 
-### Step 2: Adjust Resource Limits
+#### Step 2: Adjust Resource Limits
 
 For production deployments, adjust resources based on your cluster capacity:
 
@@ -119,7 +165,7 @@ openwebui:
       memory: 1Gi
 ```
 
-### Step 3: Deploy
+#### Step 3: Deploy
 
 ```bash
 # Install or upgrade the Helm chart
@@ -133,29 +179,69 @@ kubectl get pods -n openprodoc -w
 
 ### Step 4: Setup RAG users
 
-The first time you access to OpenWebUI interface you will be requested to create the admin user.
+After deployment, two user accounts must be created:
 
-**IMPORTANT**: After deployment, you must create a user called `watcher` in OpenProdoc.
-**IMPORTANT**: After deployment, you must create an ADMIN  user in Openwebui with the following credentials   user: watcher / email: watcher@openprodoc.local / password: 12345678 . The password for watcher user must match the one in the values file , that password can be changed using the parameter openwebui.watcher.config.password before deployment.
+#### 1. Create the watcher admin in Open WebUI
 
-The RAG system will only index and process documents that the user `watcher` in Openprodoc has READ access to. This provides fine-grained control over which documents are available for AI-powered search and question-answering.
+The watcher service needs an **admin** account in Open WebUI to create users, groups, and upload documents. This account must be created **before** the watcher can function.
 
-To create the watcher user:
+**Option A**: If no admin exists yet (first deployment), the first user to sign up via the Open WebUI interface becomes the admin. Navigate to `http://localhost:8080` and register with:
+- **Email**: `watcher@openprodoc.local`
+- **Password**: `12345678` (must match `openwebui.watcher.config.password` in values.yaml / docker-compose)
 
-1. Log in to OpenProdoc with administrator credentials
+**Option B**: If an admin already exists, create the watcher user via the Open WebUI admin panel or API:
+```bash
+curl -X POST http://localhost:8080/api/v1/auths/add \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <admin-token>" \
+  -d '{"name":"watcher","email":"watcher@openprodoc.local","password":"12345678","role":"admin"}'
+```
+
+#### 2. Create the watcher user in OpenProdoc
+
+1. Log in to OpenProdoc with administrator credentials (default: `root` / `admin`)
 2. Navigate to user management
 3. Create a new user with username: `watcher`
 4. Add the `watcher` user with READ permissions to the ACL associated with the folders/files you want to include in the RAG system
-5. Ensure the user has appropriate access levels for your use case
 
-**Access Control**: Only documents where the `watcher` user has READ permissions in the ACL will be:
-- Monitored by the watcher sidecar
+**Access Control**: Only documents where the `watcher` user has READ permissions in the OpenProdoc ACL will be:
+- Monitored by the watcher
 - Ingested into the RAG system
 - Available for semantic search and AI queries
 
 This ensures document-level security is maintained in the RAG solution.
 
+#### 3. Automatic user and group synchronization
+
+Once both watcher accounts are configured, the RAG watcher automatically:
+- **Replicates OpenProdoc users** to Open WebUI (periodic sync, default every 30s)
+- **Replicates OpenProdoc groups** to Open WebUI via SCIM API (periodic sync, default every 60s)
+- **Assigns users to groups** matching their OpenProdoc group memberships
+
+This means OpenProdoc users can log in to Open WebUI without separate registration.
+
 ### Step 5: Verify Deployment
+
+#### Docker Compose
+
+```bash
+# Check all services are running
+docker compose ps
+
+# Expected: all services "Up" or "Up (healthy)"
+
+# Check Ollama models are downloaded
+docker compose logs ollama-pull-models
+
+# Check watcher is syncing
+docker compose logs watcher
+
+# Test access
+curl -s http://localhost:8081/ProdocWeb2/ | head -5   # OpenProdoc
+curl -s http://localhost:8080/health                    # Open WebUI
+```
+
+#### Kubernetes
 
 ```bash
 # Check all pods are running
@@ -165,7 +251,7 @@ kubectl get pods -n openprodoc
 # - openprodoc-core-engine-xxx (Running)
 # - openprodoc-pgvector-xxx (Running)
 # - openprodoc-ollama-xxx (Running)
-# - openprodoc-openwebui-xxx (Running)
+# - openprodoc-openwebui-xxx (Running, 2/2 containers)
 
 # Check Ollama models are downloaded
 kubectl logs -n openprodoc -l app.kubernetes.io/component=ollama -c pull-models
@@ -223,29 +309,34 @@ This architecture ensures that document security and access control policies def
 
 ## Usage
 
-### Accessing the RAG Interface
+### Accessing the Services
 
-If ingress is enabled, access Open WebUI at:
+#### Docker Compose
 
-```
-http://localhost/rag
-```
+| Service | URL |
+|---|---|
+| OpenProdoc | `http://localhost:8081/ProdocWeb2/` |
+| OpenProdoc REST API | `http://localhost:8081/ProdocWeb2/APIRest/` |
+| Open WebUI (RAG) | `http://localhost:8080` |
+
+#### Kubernetes
+
+If ingress is enabled, access Open WebUI at `http://localhost/rag` and OpenProdoc at `http://localhost/`.
 
 If ingress is disabled, use port-forwarding:
 
 ```bash
-kubectl port-forward -n openprodoc svc/openprodoc-openwebui 8080:8080
+kubectl port-forward svc/openprodoc-openwebui 8080:8080
+kubectl port-forward svc/openprodoc-core-engine 8081:8080
 ```
-
-Then access: `http://localhost:8080`
 
 ### How It Works
 
-1. **Document Upload**: Documents added to OpenProdoc storage are automatically detected by the watcher sidecar
+1. **Document Upload**: Documents added to OpenProdoc storage are automatically detected by the watcher
 2. **Ingestion**: The watcher sends documents to Open WebUI's API
 3. **Processing**: Open WebUI:
    - Splits documents into chunks (default: 1500 chars with 100 char overlap)
-   - Generates embeddings using Ollama's `all-minilm` model
+   - Generates embeddings using Ollama's `nomic-embed-text` model
    - Stores embeddings in PGVector database
 4. **Query**: Users ask questions via the chat interface
 5. **Retrieval**: Open WebUI:
@@ -328,13 +419,19 @@ Models are large (4-8GB each) and may take time to download.
 Check watcher logs:
 
 ```bash
+# Docker Compose
+docker compose logs watcher
+
+# Kubernetes
 kubectl logs -n openprodoc <openwebui-pod> -c watcher
 ```
 
 Ensure:
-1. OpenProdoc PVC is mounted correctly
+1. OpenProdoc storage volume is mounted correctly
 2. File types are supported
 3. Open WebUI API is accessible
+4. The `watcher@openprodoc.local` admin account exists in Open WebUI (see Step 4)
+5. The `watcher` user exists in OpenProdoc with READ permissions on target documents
 
 ### PGVector Connection Issues
 

@@ -49,6 +49,8 @@
 * **Knowledge base per folder** - Each OpenProdoc folder becomes a separate knowledge base
 * **Permission-based access** - Users only access knowledge bases for documents they have permissions to
 * **Seamless authentication** - OpenProdoc users automatically login to OpenWebUI interface
+* **Native event-driven integration** - The external watcher container has been replaced by a CustomTask JAR that runs inside the OpenProdoc JVM, reacting to document and folder events in real time with zero additional containers
+* **Automatic user and group sync** - A built-in cron task replicates OpenProdoc users and groups to Open WebUI, preserving group memberships and permissions
 * **Production-grade stack** - Includes PGVector, Ollama (CPU-optimized), and Open WebUI
 * **See [docs/RAG_SETUP.md](docs/RAG_SETUP.md)** for deployment guide
 

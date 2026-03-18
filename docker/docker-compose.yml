@@ -37,7 +37,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5433:5432"
     networks:
       - openprodoc-network
     healthcheck:
@@ -77,6 +77,21 @@ services:
       REPO_ENCRYPT: "False"
       REPO_URL: /storage/OPD/
       REPO_TYPE: FS
+      # Task scheduler configuration (enables cron/event CustomTasks)
+      TASK_CATEGORY: "*"
+      TASK_SEARCH_FREQ: "60000"
+      TASK_EXEC_FREQ: "30000"
+    command:
+      - sh
+      - -c
+      - |
+        echo "=== Enabling task scheduler in Prodoc.properties ==="
+        echo "PD.TaskCategory=$$TASK_CATEGORY" >> /opt/openprodoc/Prodoc.properties
+        echo "PD.TaskSearchFreq=$$TASK_SEARCH_FREQ" >> /opt/openprodoc/Prodoc.properties
+        echo "PD.TaskExecFreq=$$TASK_EXEC_FREQ" >> /opt/openprodoc/Prodoc.properties
+        sed -i 's/TRACELEVEL=0/TRACELEVEL=2/' /opt/openprodoc/Prodoc.properties
+        echo "Task scheduler enabled (search=$${TASK_SEARCH_FREQ}ms, exec=$${TASK_EXEC_FREQ}ms)"
+        exec catalina.sh run
     volumes:
       - openprodoc-storage:/storage/OPD
     ports:
@@ -123,7 +138,7 @@ services:
     networks:
       - openprodoc-network
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:11434/ || exit 1"]
+      test: ["CMD", "ollama", "list"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -165,7 +180,7 @@ services:
   # Accessible at http://localhost:8080
   # ============================================
   openwebui:
-    image: ghcr.io/open-webui/open-webui:main
+    image: ghcr.io/open-webui/open-webui:v0.6.6
     container_name: openprodoc-openwebui
     depends_on:
       ollama:
@@ -190,7 +205,7 @@ services:
       WEBUI_SECRET_KEY: "openprodoc-secret-key-change-in-production"
       ENABLE_RAG_WEB_SEARCH: "false"
       ENABLE_IMAGE_GENERATION: "false"
-      # Signup/user config (allow watcher to register as admin)
+      # Signup/user config (allow rag-init to register the watcher admin)
       ENABLE_SIGNUP: "true"
       DEFAULT_USER_ROLE: "admin"
       # SCIM for group management
@@ -198,9 +213,8 @@ services:
       SCIM_TOKEN: "openprodoc-scim-token-change-in-production"
     volumes:
       - openwebui-data:/app/backend/data
-      - openprodoc-storage:/watch/OPD:ro
     ports:
-      - "8080:8080"
+      - "8082:8080"
     networks:
       - openprodoc-network
     healthcheck:
@@ -212,47 +226,42 @@ services:
     restart: unless-stopped
 
   # ============================================
-  # RAG Watcher - Syncs OpenProdoc docs/users/groups to OpenWebUI
+  # RAG CustomTask Init (one-shot)
+  # Uploads JAR, creates event/cron task definitions,
+  # and provisions the watcher admin account in Open WebUI.
+  # Replaces the external watcher container for doc/folder events.
   # ============================================
-  watcher:
-    image: openprodoc/openprodoc_rag:1.0.1
-    container_name: openprodoc-watcher
+  rag-init:
+    image: postgres:16-alpine
+    container_name: openprodoc-rag-init
     depends_on:
+      core-engine:
+        condition: service_started
       openwebui:
         condition: service_healthy
       postgres:
         condition: service_healthy
     environment:
-      WATCH_PATH: "/watch/OPD"
+      OPENPRODOC_URL: "http://core-engine:8080"
       OPENWEBUI_URL: "http://openwebui:8080"
-      OPENWEBUI_EMAIL: "watcher@openprodoc.local"
-      OPENWEBUI_PASSWORD: "12345678"
-      POLL_INTERVAL: "30"
-      # Knowledge Base strategy
-      KB_STRATEGY: "folder"
-      KB_FOLDER_LEVEL: "1"
-      ENRICH_FILENAME: "true"
-      # User sync
-      SYNC_USERS: "true"
-      USER_SYNC_INTERVAL: "30"
-      DEFAULT_USER_PASSWORD: "OpenProdoc2025!"
-      # Group sync
-      SYNC_GROUPS: "true"
-      GROUP_SYNC_INTERVAL: "60"
-      SCIM_API_TOKEN: "openprodoc-scim-token-change-in-production"
-      # OpenProdoc database connection
-      OPENPRODOC_DB_HOST: "postgres"
-      OPENPRODOC_DB_PORT: "5432"
-      OPENPRODOC_DB_NAME: "prodoc"
-      OPENPRODOC_DB_USER: "user1"
-      OPENPRODOC_DB_PASSWORD: "pass1"
+      OPENWEBUI_ADMIN_EMAIL: "watcher@openprodoc.local"
+      OPENWEBUI_ADMIN_PASSWORD: "12345678"
+      OPD_ROOT_USER: "root"
+      OPD_ROOT_PASSWORD: "admin"
+      POSTGRES_HOST: "postgres"
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "prodoc"
+      POSTGRES_USER: "user1"
+      POSTGRES_PASSWORD: "pass1"
+      JAR_PATH: "/jar/openprodoc-ragtask.jar"
+      SYNC_INTERVAL_MINS: "1"
     volumes:
-      - openwebui-data:/app/backend/data
-      - openprodoc-storage:/watch/OPD:ro
-      - watcher-state:/state
+      - ./rag-init.sh:/rag-init.sh:ro
+      - ./openprodoc-ragtask.jar:/jar/openprodoc-ragtask.jar:ro
+    entrypoint: ["sh", "/rag-init.sh"]
     networks:
       - openprodoc-network
-    restart: unless-stopped
+    restart: "no"
 
 volumes:
   postgres-data:
@@ -265,9 +274,6 @@ volumes:
     driver: local
   openwebui-data:
     driver: local
-  watcher-state:
-    driver: local
-
 networks:
   openprodoc-network:
     driver: bridge

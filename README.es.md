@@ -49,6 +49,8 @@
 * **Base de conocimientos por carpeta** - Cada carpeta de OpenProdoc se convierte en una base de conocimientos separada
 * **Acceso basado en permisos** - Los usuarios solo acceden a bases de conocimientos de documentos con permisos
 * **Autenticación transparente** - Los usuarios de OpenProdoc inician sesión automáticamente en la interfaz OpenWebUI
+* **Integración nativa basada en eventos** - El contenedor watcher externo ha sido reemplazado por un CustomTask JAR que se ejecuta dentro de la JVM de OpenProdoc, reaccionando a eventos de documentos y carpetas en tiempo real sin contenedores adicionales
+* **Sincronización automática de usuarios y grupos** - Una tarea cron integrada replica los usuarios y grupos de OpenProdoc en Open WebUI, preservando las membresías de grupo y los permisos
 * **Stack de nivel producción** - Incluye PGVector, Ollama (optimizado para CPU) y Open WebUI
 * **Ver [docs/RAG_SETUP.md](docs/RAG_SETUP.md)** para la guía de despliegue
 

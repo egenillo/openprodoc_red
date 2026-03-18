@@ -1,0 +1,15 @@
+{{- if .Values.ragInit.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "openprodoc.fullname" . }}-rag-init
+  labels:
+    {{- include "openprodoc.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
+data:
+  rag-init.sh: |
+{{ .Files.Get "files/rag-init.sh" | indent 4 }}
+{{- end }}

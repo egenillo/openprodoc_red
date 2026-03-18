@@ -49,6 +49,8 @@
 * **Base de connaissances par dossier** - Chaque dossier OpenProdoc devient une base de connaissances distincte
 * **Accès basé sur les permissions** - Les utilisateurs accèdent uniquement aux bases de connaissances des documents autorisés
 * **Authentification transparente** - Les utilisateurs OpenProdoc se connectent automatiquement à l'interface OpenWebUI
+* **Intégration native événementielle** - Le conteneur watcher externe a été remplacé par un CustomTask JAR qui s'exécute dans la JVM d'OpenProdoc, réagissant aux événements de documents et dossiers en temps réel sans conteneurs supplémentaires
+* **Synchronisation automatique des utilisateurs et groupes** - Une tâche cron intégrée réplique les utilisateurs et groupes d'OpenProdoc vers Open WebUI, en préservant les appartenances aux groupes et les permissions
 * **Stack de niveau production** - Inclut PGVector, Ollama (optimisé CPU) et Open WebUI
 * **Voir [docs/RAG_SETUP.md](docs/RAG_SETUP.md)** pour le guide de déploiement
 

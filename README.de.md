@@ -49,6 +49,8 @@
 * **Wissensdatenbank pro Ordner** - Jeder OpenProdoc-Ordner wird zu einer separaten Wissensdatenbank
 * **Berechtigungsbasierter Zugriff** - Benutzer greifen nur auf Wissensdatenbanken für berechtigte Dokumente zu
 * **Nahtlose Authentifizierung** - OpenProdoc-Benutzer melden sich automatisch bei der OpenWebUI-Oberfläche an
+* **Native ereignisgesteuerte Integration** - Der externe Watcher-Container wurde durch ein CustomTask-JAR ersetzt, das in der OpenProdoc-JVM läuft und in Echtzeit auf Dokument- und Ordnerereignisse reagiert, ohne zusätzliche Container
+* **Automatische Benutzer- und Gruppensynchronisation** - Ein integrierter Cron-Task repliziert OpenProdoc-Benutzer und -Gruppen nach Open WebUI und bewahrt dabei Gruppenmitgliedschaften und Berechtigungen
 * **Produktionsreifer Stack** - Enthält PGVector, Ollama (CPU-optimiert) und Open WebUI
 * **Siehe [docs/RAG_SETUP.md](docs/RAG_SETUP.md)** für den Deployment-Leitfaden
 

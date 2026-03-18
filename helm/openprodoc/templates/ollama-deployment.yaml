@@ -99,17 +99,15 @@ spec:
         resources:
           {{- toYaml .Values.ollama.resources | nindent 12 }}
         livenessProbe:
-          httpGet:
-            path: /
-            port: http
+          exec:
+            command: ["ollama", "list"]
           initialDelaySeconds: 60
           periodSeconds: 30
           timeoutSeconds: 10
           failureThreshold: 3
         readinessProbe:
-          httpGet:
-            path: /
-            port: http
+          exec:
+            command: ["ollama", "list"]
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5

@@ -105,7 +105,7 @@ spec:
         - name: ENABLE_IMAGE_GENERATION
           value: "false"
 
-        # Enable signup for watcher user creation
+        # Enable signup for rag-init to register the watcher admin
         - name: ENABLE_SIGNUP
           value: "true"
         - name: DEFAULT_USER_ROLE
@@ -120,11 +120,6 @@ spec:
         volumeMounts:
         - name: openwebui-data
           mountPath: /app/backend/data
-        {{- if .Values.openwebui.sharedStorage.enabled }}
-        - name: openprodoc-storage
-          mountPath: {{ .Values.openwebui.sharedStorage.mountPath }}
-          readOnly: {{ .Values.openwebui.sharedStorage.readOnly }}
-        {{- end }}
 
         resources:
           {{- toYaml .Values.openwebui.resources | nindent 12 }}
@@ -147,73 +142,6 @@ spec:
           timeoutSeconds: 5
           failureThreshold: 3
 
-      {{- if .Values.openwebui.watcher.enabled }}
-      # Watcher sidecar container
-      - name: watcher
-        image: "{{ .Values.openwebui.watcher.image.registry }}{{ if .Values.openwebui.watcher.image.registry }}/{{ end }}{{ .Values.openwebui.watcher.image.repository }}:{{ .Values.openwebui.watcher.image.tag }}"
-        imagePullPolicy: {{ .Values.openwebui.watcher.image.pullPolicy }}
-        env:
-        - name: WATCH_PATH
-          value: {{ .Values.openwebui.watcher.config.watchPath | quote }}
-        - name: OPENWEBUI_URL
-          value: "http://localhost:8080"
-        - name: OPENWEBUI_EMAIL
-          value: {{ .Values.openwebui.watcher.config.email | default "watcher@openprodoc.local" | quote }}
-        - name: OPENWEBUI_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: {{ include "openprodoc.fullname" . }}-watcher-secret
-              key: password
-        - name: POLL_INTERVAL
-          value: {{ .Values.openwebui.watcher.config.pollInterval | quote }}
-        # Knowledge Base strategy configuration
-        - name: KB_STRATEGY
-          value: "folder"
-        - name: KB_FOLDER_LEVEL
-          value: "1"
-        - name: ENRICH_FILENAME
-          value: "true"
-        - name: SYNC_USERS
-          value: "true"
-        - name: USER_SYNC_INTERVAL
-          value: {{ .Values.openwebui.watcher.config.userSyncInterval | quote }}
-        - name: DEFAULT_USER_PASSWORD
-          value: "OpenProdoc2025!"
-        # Group synchronization configuration
-        - name: SYNC_GROUPS
-          value: "true"
-        - name: GROUP_SYNC_INTERVAL
-          value: {{ .Values.openwebui.watcher.config.groupSyncInterval | quote }}
-        - name: SCIM_API_TOKEN
-          value: "openprodoc-scim-token-change-in-production"
-        # OpenProdoc PostgreSQL connection for metadata queries
-        - name: OPENPRODOC_DB_HOST
-          value: {{ .Values.coreEngine.config.database.host | quote }}
-        - name: OPENPRODOC_DB_PORT
-          value: {{ .Values.coreEngine.config.database.port | quote }}
-        - name: OPENPRODOC_DB_NAME
-          value: {{ .Values.coreEngine.config.database.name | quote }}
-        - name: OPENPRODOC_DB_USER
-          value: {{ .Values.coreEngine.config.database.user | quote }}
-        - name: OPENPRODOC_DB_PASSWORD
-          value: {{ .Values.coreEngine.config.database.password | quote }}
-        volumeMounts:
-        # Mount openwebui-data to write files to DOCS_DIR
-        - name: openwebui-data
-          mountPath: /app/backend/data
-        {{- if .Values.openwebui.sharedStorage.enabled }}
-        - name: openprodoc-storage
-          mountPath: {{ .Values.openwebui.watcher.config.watchPath }}
-          readOnly: true
-        {{- end }}
-        # Use openwebui-data for persistent watcher state
-        - name: openwebui-data
-          mountPath: /state
-          subPath: watcher-state
-        resources:
-          {{- toYaml .Values.openwebui.watcher.resources | nindent 12 }}
-      {{- end }}
-
       volumes:
       - name: openwebui-data
         {{- if .Values.openwebui.persistence.enabled }}
@@ -222,13 +150,6 @@ spec:
         {{- else }}
         emptyDir: {}
         {{- end }}
-      {{- if .Values.openwebui.sharedStorage.enabled }}
-      - name: openprodoc-storage
-        persistentVolumeClaim:
-          claimName: {{ include "openprodoc.fullname" . }}-storage
-          readOnly: {{ .Values.openwebui.sharedStorage.readOnly }}
-      {{- end }}
-      # Note: watcher-state uses a subPath of openwebui-data volume for persistence
 
       {{- with .Values.openwebui.nodeSelector }}
       nodeSelector:

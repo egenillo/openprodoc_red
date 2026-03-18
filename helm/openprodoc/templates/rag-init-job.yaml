@@ -1,0 +1,82 @@
+{{- if .Values.ragInit.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "openprodoc.fullname" . }}-rag-init
+  labels:
+    {{- include "openprodoc.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rag-init
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: rag-init
+        image: postgres:16-alpine
+        command: ["sh", "/scripts/rag-init.sh"]
+        env:
+        - name: OPENPRODOC_URL
+          value: "http://{{ include "openprodoc.fullname" . }}-core-engine:{{ .Values.coreEngine.service.port }}"
+        - name: OPENWEBUI_URL
+          value: "http://{{ include "openprodoc.fullname" . }}-openwebui:{{ .Values.openwebui.service.port }}"
+        - name: OPENWEBUI_ADMIN_EMAIL
+          value: {{ .Values.ragInit.config.watcherEmail | quote }}
+        - name: OPENWEBUI_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "openprodoc.fullname" . }}-rag-init
+              key: openwebui-password
+        - name: OPD_ROOT_USER
+          value: "root"
+        - name: OPD_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openprodoc-secrets
+              key: root-password
+        - name: POSTGRES_HOST
+          value: {{ .Values.coreEngine.config.database.host | quote }}
+        - name: POSTGRES_PORT
+          value: {{ .Values.coreEngine.config.database.port | quote }}
+        - name: POSTGRES_DB
+          value: {{ .Values.coreEngine.config.database.name | quote }}
+        - name: POSTGRES_USER
+          value: {{ .Values.coreEngine.config.database.user | quote }}
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openprodoc-secrets
+              key: db-password
+        - name: JAR_PATH
+          value: "/jar/openprodoc-ragtask.jar"
+        - name: SYNC_INTERVAL_MINS
+          value: "1"
+        volumeMounts:
+        - name: init-script
+          mountPath: /scripts
+        - name: jar-file
+          mountPath: /jar
+        resources:
+          limits:
+            cpu: 200m
+            memory: 128Mi
+          requests:
+            cpu: 100m
+            memory: 64Mi
+      volumes:
+      - name: init-script
+        configMap:
+          name: {{ include "openprodoc.fullname" . }}-rag-init
+          defaultMode: 0755
+      - name: jar-file
+        configMap:
+          name: {{ include "openprodoc.fullname" . }}-rag-init-jar
+{{- end }}

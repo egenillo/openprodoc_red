@@ -4,60 +4,41 @@ This guide explains how to deploy and use the integrated RAG (Retrieval-Augmente
 
 ## Overview
 
-The RAG solution extends OpenProdoc with AI-powered document search and question-answering capabilities. It consists of three main components:
+The RAG solution extends OpenProdoc with AI-powered document search and question-answering capabilities. It consists of these main components:
 
 1. **PGVector** - PostgreSQL with vector extension for storing document embeddings
 2. **Ollama** - LLM and embedding engine running on CPU
-3. **Open WebUI** - User interface and RAG orchestrator with automatic document ingestion
+3. **Open WebUI** - User interface and RAG orchestrator
+4. **RAG CustomTask** - Native OpenProdoc event handlers that automatically sync documents, folders, users, and groups to Open WebUI
 
 ## Architecture
 
-### Kubernetes (Helm) Architecture
-
 ```
-┌─────────────────┐
-│  OpenProdoc     │
-│  Core Engine    │
-└────────┬────────┘
-         │
-         │ Shared PVC (Read-Only)
-         │
-         ▼
-┌─────────────────────────────────────┐
-│  Open WebUI Pod                     │
-│  ┌──────────────┐  ┌─────────────┐ │
-│  │  Open WebUI  │  │   Watcher   │ │
-│  │   (Main)     │  │  (Sidecar)  │ │
-│  └──────┬───────┘  └──────┬──────┘ │
-└─────────┼──────────────────┼────────┘
-          │                  │
-          │                  │ Monitors & Ingests
-          ▼                  ▼
-    ┌─────────┐        ┌──────────┐
-    │ Ollama  │        │ PGVector │
-    │  (LLM)  │        │ (Vectors)│
-    └─────────┘        └──────────┘
+┌──────────────────────────────┐
+│  OpenProdoc Core Engine      │
+│  ┌────────────────────────┐  │
+│  │  RAG CustomTask (JAR)  │  │
+│  │  • Doc events (INS/UPD/DEL)
+│  │  • Folder events       │  │
+│  │  • User/Group sync     │  │
+│  └───────────┬────────────┘  │
+└──────────────┼───────────────┘
+               │ HTTP API calls
+               ▼
+        ┌─────────────┐
+        │  Open WebUI  │
+        │  (RAG UI)    │
+        └──────┬───────┘
+               │
+       ┌───────┴───────┐
+       ▼               ▼
+ ┌──────────┐    ┌──────────┐
+ │  Ollama  │    │ PGVector │
+ │  (LLM)   │    │ (Vectors)│
+ └──────────┘    └──────────┘
 ```
 
-### Docker Compose Architecture
-
-```
-┌─────────────────┐     ┌─────────────────┐
-│  OpenProdoc     │     │    Watcher       │
-│  Core Engine    │     │  (separate       │
-│  :8081          │     │   container)     │
-└────────┬────────┘     └──────┬───────────┘
-         │                     │
-         │ Shared Volume       │ Monitors & Ingests
-         │ (Read-Only)         │
-         ▼                     ▼
-┌─────────────────┐     ┌──────────┐     ┌──────────┐
-│  Open WebUI     │────▶│ Ollama   │     │ PGVector │
-│  :8080          │     │  (LLM)   │     │ (Vectors)│
-└─────────────────┘     └──────────┘     └──────────┘
-```
-
-In Docker Compose, the watcher runs as a separate container (not a sidecar) and connects to Open WebUI via the Docker network.
+The CustomTask runs inside the OpenProdoc JVM — no external sidecar or polling container is needed. Document and folder events trigger HTTP API calls to Open WebUI in real time, and a cron task syncs users and groups every 5 minutes via SCIM.
 
 ## Components
 
@@ -87,13 +68,17 @@ In Docker Compose, the watcher runs as a separate container (not a sidecar) and 
 - **Storage**: 5Gi for metadata
 - **Resources**: 500m-2000m CPU, 1-4Gi RAM
 
-### 4. RAG Watcher
+### 4. RAG CustomTask
 
-- **Image**: `openprodoc/openprodoc_rag:1.0.1`
-- **Purpose**: Monitors OpenProdoc storage and automatically ingests new documents. Also synchronizes users and groups from OpenProdoc to Open WebUI via SCIM API.
-- **Deployment**: Runs as a sidecar container (Kubernetes) or separate container (Docker Compose)
-- **Supported Formats**: txt, md, pdf, doc, docx, html, json, csv, xml
-- **Resources**: 100m-200m CPU, 128-256Mi RAM
+- **Artifact**: `openprodoc-ragtask.jar` (uploaded into OpenProdoc as a document)
+- **Purpose**: Event-driven integration that automatically syncs documents, folders, users, and groups from OpenProdoc to Open WebUI
+- **Deployment**: Runs inside the OpenProdoc JVM — no separate container required
+- **Tasks**:
+  - `RAGEventDoc` — reacts to document INSERT/UPDATE/DELETE events
+  - `RAGEventFold` — reacts to folder INSERT/UPDATE/DELETE events
+  - `RAGSyncCron` — syncs users and groups to Open WebUI every 5 minutes via SCIM
+- **Supported Formats**: pdf, doc, docx, txt, md, rtf, html, json, csv, xml, odt
+- **Resources**: Zero additional resources (runs within the core-engine JVM)
 
 ## Deployment
 
@@ -115,7 +100,7 @@ docker compose logs -f
 # Open WebUI:  http://localhost:8080
 ```
 
-The docker-compose.yml deploys all 7 services with correct startup ordering and health checks. The watcher runs as a separate container and connects to Open WebUI via the Docker network.
+The docker-compose.yml deploys all services with correct startup ordering and health checks. A one-shot `rag-init` container automatically uploads the CustomTask JAR, creates event/cron task definitions, and provisions the watcher admin account in Open WebUI.
 
 ### Option B: Kubernetes (Helm)
 
@@ -137,8 +122,9 @@ ollama:
 
 openwebui:
   enabled: true
-  watcher:
-    enabled: true
+
+ragInit:
+  enabled: true
 ```
 
 #### Step 2: Adjust Resource Limits
@@ -177,45 +163,28 @@ helm upgrade --install openprodoc ./helm/openprodoc \
 kubectl get pods -n openprodoc -w
 ```
 
-### Step 4: Setup RAG users
+### Step 4: RAG Initialization
 
-After deployment, two user accounts must be created:
+The `rag-init` one-shot container (Docker Compose) or Kubernetes Job (Helm) runs automatically after deployment and handles:
 
-#### 1. Create the watcher admin in Open WebUI
+1. **Watcher admin account** — Creates `watcher@openprodoc.local` in Open WebUI with admin privileges. This account is used by the CustomTask to manage knowledge bases, files, users, and groups.
+2. **JAR upload** — Uploads `openprodoc-ragtask.jar` to OpenProdoc via the REST API.
+3. **Task definitions** — Inserts event tasks (document and folder INSERT/UPDATE/DELETE) and a cron task (user/group sync every 5 minutes) into the OpenProdoc database.
 
-The watcher service needs an **admin** account in Open WebUI to create users, groups, and upload documents. This account must be created **before** the watcher can function.
+The init is **idempotent** — if the tasks already exist, it exits immediately without making changes. This allows safe re-runs on `helm upgrade` or `docker compose up`.
 
-**Option A**: If no admin exists yet (first deployment), the first user to sign up via the Open WebUI interface becomes the admin. Navigate to `http://localhost:8080` and register with:
+After deployment, you can sign in to Open WebUI with the default watcher admin credentials:
+
 - **Email**: `watcher@openprodoc.local`
-- **Password**: `12345678` (must match `openwebui.watcher.config.password` in values.yaml / docker-compose)
+- **Password**: `12345678`
 
-**Option B**: If an admin already exists, create the watcher user via the Open WebUI admin panel or API:
-```bash
-curl -X POST http://localhost:8080/api/v1/auths/add \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <admin-token>" \
-  -d '{"name":"watcher","email":"watcher@openprodoc.local","password":"12345678","role":"admin"}'
-```
+These credentials are configurable via `OPENWEBUI_ADMIN_EMAIL` / `OPENWEBUI_ADMIN_PASSWORD` in Docker Compose, or `ragInit.config.watcherEmail` / `ragInit.config.watcherPassword` in Helm values. Change them for production deployments.
 
-#### 2. Create the watcher user in OpenProdoc
+#### Automatic user and group synchronization
 
-1. Log in to OpenProdoc with administrator credentials (default: `root` / `admin`)
-2. Navigate to user management
-3. Create a new user with username: `watcher`
-4. Add the `watcher` user with READ permissions to the ACL associated with the folders/files you want to include in the RAG system
-
-**Access Control**: Only documents where the `watcher` user has READ permissions in the OpenProdoc ACL will be:
-- Monitored by the watcher
-- Ingested into the RAG system
-- Available for semantic search and AI queries
-
-This ensures document-level security is maintained in the RAG solution.
-
-#### 3. Automatic user and group synchronization
-
-Once both watcher accounts are configured, the RAG watcher automatically:
-- **Replicates OpenProdoc users** to Open WebUI (periodic sync, default every 30s)
-- **Replicates OpenProdoc groups** to Open WebUI via SCIM API (periodic sync, default every 60s)
+Once initialized, the `RAGSyncCron` task automatically:
+- **Replicates OpenProdoc users** to Open WebUI (every 5 minutes)
+- **Replicates OpenProdoc groups** to Open WebUI via SCIM API
 - **Assigns users to groups** matching their OpenProdoc group memberships
 
 This means OpenProdoc users can log in to Open WebUI without separate registration.
@@ -233,8 +202,8 @@ docker compose ps
 # Check Ollama models are downloaded
 docker compose logs ollama-pull-models
 
-# Check watcher is syncing
-docker compose logs watcher
+# Check rag-init completed successfully
+docker compose logs rag-init
 
 # Test access
 curl -s http://localhost:8081/ProdocWeb2/ | head -5   # OpenProdoc
@@ -251,13 +220,14 @@ kubectl get pods -n openprodoc
 # - openprodoc-core-engine-xxx (Running)
 # - openprodoc-pgvector-xxx (Running)
 # - openprodoc-ollama-xxx (Running)
-# - openprodoc-openwebui-xxx (Running, 2/2 containers)
+# - openprodoc-openwebui-xxx (Running)
+
+# Check rag-init job completed
+kubectl get jobs -n openprodoc
+kubectl logs -n openprodoc -l app.kubernetes.io/name=rag-init
 
 # Check Ollama models are downloaded
 kubectl logs -n openprodoc -l app.kubernetes.io/component=ollama -c pull-models
-
-# Check watcher is monitoring
-kubectl logs -n openprodoc -l app.kubernetes.io/component=openwebui -c watcher
 ```
 
 ### Step 6: User Authentication and Knowledge Base Organization
@@ -313,11 +283,12 @@ This architecture ensures that document security and access control policies def
 
 #### Docker Compose
 
-| Service | URL |
-|---|---|
-| OpenProdoc | `http://localhost:8081/ProdocWeb2/` |
-| OpenProdoc REST API | `http://localhost:8081/ProdocWeb2/APIRest/` |
-| Open WebUI (RAG) | `http://localhost:8080` |
+| Service | URL | Host Port | Container Port |
+|---|---|---|---|
+| OpenProdoc | `http://localhost:8081/ProdocWeb2/` | 8081 | 8080 |
+| OpenProdoc REST API | `http://localhost:8081/ProdocWeb2/APIRest/` | 8081 | 8080 |
+| Open WebUI (RAG) | `http://localhost:8082` | 8082 | 8080 |
+| PostgreSQL | `localhost:5433` | 5433 | 5432 |
 
 #### Kubernetes
 
@@ -330,10 +301,21 @@ kubectl port-forward svc/openprodoc-openwebui 8080:8080
 kubectl port-forward svc/openprodoc-core-engine 8081:8080
 ```
 
+### Querying Knowledge Bases
+
+To use a Knowledge Base in a chat conversation in Open WebUI:
+
+1. Open a new chat in Open WebUI
+2. In the message input, type **`#`** — a dropdown will appear listing available Knowledge Bases
+3. Select the desired Knowledge Base (e.g., `folder1`)
+4. Type your question and send — the LLM will use RAG to search the selected Knowledge Base when generating its answer
+
+You can attach multiple Knowledge Bases to a single conversation by typing `#` again and selecting additional ones.
+
 ### How It Works
 
-1. **Document Upload**: Documents added to OpenProdoc storage are automatically detected by the watcher
-2. **Ingestion**: The watcher sends documents to Open WebUI's API
+1. **Document Upload**: When a document is inserted or updated in OpenProdoc, the `RAGEventDoc` CustomTask fires
+2. **Ingestion**: The CustomTask uploads the document to Open WebUI's API and adds it to the corresponding Knowledge Base
 3. **Processing**: Open WebUI:
    - Splits documents into chunks (default: 1500 chars with 100 char overlap)
    - Generates embeddings using Ollama's `nomic-embed-text` model
@@ -347,7 +329,7 @@ kubectl port-forward svc/openprodoc-core-engine 8081:8080
 
 ### Supported Document Types
 
-The watcher automatically processes these file types:
+The CustomTask automatically processes these file types:
 - Text: `.txt`, `.md`, `.rst`, `.rtf`
 - Documents: `.pdf`, `.doc`, `.docx`
 - Web: `.html`, `.htm`
@@ -375,15 +357,6 @@ openwebui:
       enabled: true
       chunkSize: 1500      # Size of document chunks
       chunkOverlap: 100    # Overlap between chunks
-```
-
-### Watcher Configuration
-
-```yaml
-openwebui:
-  watcher:
-    config:
-      pollInterval: 30  # How often to check for new files (seconds)
 ```
 
 ### Storage Configuration
@@ -414,24 +387,25 @@ kubectl logs -n openprodoc <ollama-pod> -c pull-models
 
 Models are large (4-8GB each) and may take time to download.
 
-### Watcher Not Ingesting Documents
+### Documents Not Appearing in Open WebUI
 
-Check watcher logs:
+Check that the rag-init completed successfully:
 
 ```bash
 # Docker Compose
-docker compose logs watcher
+docker compose logs rag-init
 
 # Kubernetes
-kubectl logs -n openprodoc <openwebui-pod> -c watcher
+kubectl logs -n openprodoc -l app.kubernetes.io/name=rag-init
 ```
 
 Ensure:
-1. OpenProdoc storage volume is mounted correctly
-2. File types are supported
-3. Open WebUI API is accessible
-4. The `watcher@openprodoc.local` admin account exists in Open WebUI (see Step 4)
-5. The `watcher` user exists in OpenProdoc with READ permissions on target documents
+1. The `rag-init` container/job completed without errors
+2. The `watcher@openprodoc.local` admin account exists in Open WebUI
+3. The CustomTask JAR was uploaded (check OpenProdoc System folder)
+4. Event tasks are active (check OpenProdoc Admin → Task Management)
+5. Open WebUI is reachable from the core-engine at the configured URL
+6. The document MIME type is in the supported list
 
 ### PGVector Connection Issues
 
@@ -469,11 +443,10 @@ For CPU-constrained environments:
          memory: 4Gi
    ```
 
-3. Disable watcher if manual ingestion is acceptable:
+3. Disable CustomTask init and use manual document upload:
    ```yaml
-   openwebui:
-     watcher:
-       enabled: false
+   ragInit:
+     enabled: false
    ```
 
 ## Disabling RAG Components
@@ -502,9 +475,7 @@ openwebui:
 
 2. **Network Policies**: Consider implementing network policies to restrict pod-to-pod communication
 
-3. **Read-Only Mount**: The watcher mounts OpenProdoc storage as read-only for safety
-
-4. **API Authentication**: Configure Open WebUI authentication in production
+3. **API Authentication**: Configure Open WebUI authentication in production. After rag-init completes, consider setting `ENABLE_SIGNUP=false` and `DEFAULT_USER_ROLE=user` to prevent unauthorized admin accounts.
 
 ## Performance Tuning
 
@@ -531,8 +502,7 @@ openwebui:
 
 1. Use Phi-3 model (smaller and faster)
 2. Reduce chunk size to process fewer embeddings
-3. Increase watcher poll interval to reduce CPU usage
-4. Disable watcher and use manual document upload
+3. Disable `ragInit` and use manual document upload via Open WebUI
 
 ## Monitoring
 

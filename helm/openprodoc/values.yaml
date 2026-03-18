@@ -67,6 +67,12 @@ coreEngine:
       dateFormat: "dd/MM/yyyy"
       mainKey: "uthfytnbh84kflh06fhru"  # Encryption key for documents
 
+    # Task scheduler configuration (enables cron/event CustomTasks)
+    taskScheduler:
+      category: "*"
+      searchFreq: "60000"
+      execFreq: "30000"
+
     # Repository configuration
     repository:
       name: "Reposit"
@@ -271,7 +277,7 @@ openwebui:
   image:
     registry: ghcr.io
     repository: open-webui/open-webui
-    tag: "main"
+    tag: "v0.6.6"
     pullPolicy: IfNotPresent
 
   service:
@@ -293,44 +299,6 @@ openwebui:
       enabled: true
       chunkSize: 1500
       chunkOverlap: 100
-
-  # Watcher sidecar configuration
-  watcher:
-    enabled: true
-    image:
-      registry: ""
-      repository: openprodoc/openprodoc_rag
-      tag: "1.0.1"
-      pullPolicy: IfNotPresent
-
-    config:
-      # Directory to watch (from shared openprodoc PVC)
-      watchPath: "/watch/OPD"
-      # Open WebUI credentials for API authentication
-      email: "watcher@openprodoc.local"
-      password: "12345678"
-      # Poll interval in seconds
-      pollInterval: 30
-      # User synchronization interval in seconds (default: 300 = 5 minutes)
-      userSyncInterval: 30
-      # Group synchronization interval in seconds (default: 3600 = 1 hour)
-      groupSyncInterval: 60
-
-    resources:
-      limits:
-        cpu: 200m
-        memory: 256Mi
-      requests:
-        cpu: 100m
-        memory: 128Mi
-
-  # Mount the openprodoc storage PVC (read-only)
-  sharedStorage:
-    enabled: true
-    # Will reference the openprodoc storage PVC
-    claimName: ""  # Auto-generated from openprodoc.fullname
-    mountPath: "/watch/OPD"
-    readOnly: true
 
   persistence:
     enabled: true
@@ -360,4 +328,17 @@ openwebui:
         - ALL
     readOnlyRootFilesystem: false
 
+
+# ========================================
+# RAG CustomTask Init (post-install Job)
+# Replaces the external watcher with native
+# OpenProdoc event-driven document handling.
+# ========================================
+ragInit:
+  enabled: true
+
+  config:
+    # Open WebUI admin account for RAG operations
+    watcherEmail: "watcher@openprodoc.local"
+    watcherPassword: "12345678"
 

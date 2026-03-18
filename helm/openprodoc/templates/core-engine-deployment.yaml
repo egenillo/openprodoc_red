@@ -112,6 +112,25 @@ spec:
         - name: REPO_PARAM
           value: {{ .Values.coreEngine.config.repository.param | quote }}
 
+        # Task scheduler configuration (enables cron/event CustomTasks)
+        - name: TASK_CATEGORY
+          value: {{ .Values.coreEngine.config.taskScheduler.category | default "*" | quote }}
+        - name: TASK_SEARCH_FREQ
+          value: {{ .Values.coreEngine.config.taskScheduler.searchFreq | default "60000" | quote }}
+        - name: TASK_EXEC_FREQ
+          value: {{ .Values.coreEngine.config.taskScheduler.execFreq | default "30000" | quote }}
+
+        command:
+        - sh
+        - -c
+        - |
+          echo "=== Enabling task scheduler in Prodoc.properties ==="
+          echo "PD.TaskCategory=$(TASK_CATEGORY)" >> /opt/openprodoc/Prodoc.properties
+          echo "PD.TaskSearchFreq=$(TASK_SEARCH_FREQ)" >> /opt/openprodoc/Prodoc.properties
+          echo "PD.TaskExecFreq=$(TASK_EXEC_FREQ)" >> /opt/openprodoc/Prodoc.properties
+          echo "Task scheduler enabled (search=$(TASK_SEARCH_FREQ)ms, exec=$(TASK_EXEC_FREQ)ms)"
+          exec catalina.sh run
+
         volumeMounts:
         {{- if .Values.coreEngine.persistence.enabled }}
         - name: storage

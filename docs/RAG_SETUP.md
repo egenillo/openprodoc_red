@@ -51,7 +51,7 @@ The CustomTask runs inside the OpenProdoc JVM — no external sidecar or polling
 
 ### 2. Ollama (LLM Engine)
 
-- **Image**: `ollama/ollama:0.5.4`
+- **Image**: `ollama/ollama:0.18.2`
 - **Models**:
   - LLM: `llama3.1:latest` (or `phi3` for lower resource usage)
   - Embeddings: `nomic-embed-text:latest` (lightweight, CPU-optimized)
@@ -101,6 +101,107 @@ docker compose logs -f
 ```
 
 The docker-compose.yml deploys all services with correct startup ordering and health checks. A one-shot `rag-init` container automatically uploads the CustomTask JAR, creates event/cron task definitions, and provisions the watcher admin account in Open WebUI.
+
+**Note:** On first startup, the `ollama-pull-models` container downloads the LLM model (~4-5 GB) and the embedding model. This can take several minutes depending on your internet connection. You can monitor the progress with `docker logs -f openprodoc-model-puller`. Once the download completes, the models will appear in Open WebUI and be available for selection.
+
+#### Configuring Models
+
+The LLM and embedding models are configurable via environment variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `LLM_MODEL` | `llama3.1:latest` | LLM model for chat |
+| `EMBEDDING_MODEL` | `nomic-embed-text:latest` | Embedding model for RAG |
+
+You can override them in several ways:
+
+**Inline:**
+```bash
+LLM_MODEL=phi3 EMBEDDING_MODEL=nomic-embed-text:latest docker compose up -d
+```
+
+**With a `.env` file** in the `docker/` folder:
+```
+LLM_MODEL=phi3
+EMBEDDING_MODEL=nomic-embed-text:latest
+```
+
+**Export:**
+```bash
+export LLM_MODEL=phi3
+docker compose up -d
+```
+
+If not set, the defaults (`llama3.1:latest` and `nomic-embed-text:latest`) are used.
+
+#### GPU Support for Ollama
+
+Ollama can use a GPU to significantly speed up LLM inference. Start scripts are provided to auto-detect GPU availability and apply the correct Docker Compose configuration:
+
+| Platform | Script | GPU Support |
+|---|---|---|
+| Linux | `./start-linux.sh` | NVIDIA and AMD (auto-detected) |
+| Windows | `start-windows.bat` | NVIDIA only |
+| macOS | Not needed — use `docker compose up -d` directly | None (Docker Desktop runs in a VM, no GPU passthrough) |
+
+**Linux:**
+
+```bash
+cd docker/
+chmod +x start-linux.sh
+./start-linux.sh
+```
+
+The script detects NVIDIA GPUs via `nvidia-smi` and AMD GPUs via `/dev/kfd`, then launches Docker Compose with the appropriate override file (`docker-compose.nvidia.yml` or `docker-compose.amd.yml`). If no GPU is found, it starts in CPU-only mode.
+
+**Prerequisites for GPU usage:**
+- **NVIDIA**: NVIDIA drivers and [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) must be installed on the host. Supported on Linux and Windows.
+- **AMD**: ROCm-compatible GPU and drivers must be installed. **Linux only** — the `ollama/ollama:0.18.2-rocm` Docker image is specifically designed for Linux systems with AMD GPUs and is not supported on Windows or macOS.
+
+**Windows:**
+
+```cmd
+cd docker
+start-windows.bat
+```
+
+The script checks for NVIDIA GPUs via `nvidia-smi`. On Windows, Docker Desktop GPU passthrough is only officially supported for NVIDIA GPUs using the WSL2 backend. There is no specialized Docker image for ROCm acceleration on Windows.
+
+**Windows with AMD GPU:** If you have an AMD Radeon GPU on Windows, the recommended approach is to install Ollama natively instead of using Docker:
+
+1. Download `OllamaSetup.exe` from the [official Ollama website](https://ollama.com/download)
+2. Ensure you have the latest AMD drivers installed
+3. Ollama will automatically detect your compatible Radeon card
+4. Configure the `OLLAMA_BASE_URL` in the Docker Compose `openwebui` service to point to your native Ollama instance (e.g., `http://host.docker.internal:11434`) instead of the containerized one
+
+**macOS:**
+
+No start script is needed. Docker Desktop for Mac runs containers inside a Linux VM, so neither NVIDIA, AMD, nor Apple Silicon GPUs are accessible from containers. Simply run:
+
+```bash
+cd docker/
+docker compose up -d
+```
+
+#### Stopping and Data Persistence
+
+**Important:** Be careful with the `-v` flag when stopping services:
+
+| Command | Effect |
+|---|---|
+| `docker compose stop` | Stops containers. No data loss. |
+| `docker compose down` | Stops and removes containers and networks. **Volumes (data) are preserved.** |
+| `docker compose down -v` | Stops and removes containers, networks, **and all volumes. All data is lost.** |
+
+Using `docker compose down -v` destroys the following named volumes and all their data:
+
+- **`postgres-data`** — OpenProdoc database (documents metadata, users, configuration)
+- **`openprodoc-storage`** — Document files stored on the filesystem
+- **`pgvector-data`** — RAG vector embeddings
+- **`ollama-data`** — Downloaded LLM models (~4-5 GB)
+- **`openwebui-data`** — Open WebUI settings and user accounts
+
+Use `docker compose down` (without `-v`) to stop everything safely while keeping your data intact.
 
 ### Option B: Kubernetes (Helm)
 

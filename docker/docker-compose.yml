@@ -52,7 +52,7 @@ services:
   # Accessible at http://localhost:8081/ProdocWeb2/
   # ============================================
   core-engine:
-    image: openprodoc/core-engine:latest
+    image: openprodoc/core-engine:1.0.0
     container_name: openprodoc-core
     depends_on:
       postgres:
@@ -127,7 +127,7 @@ services:
   # Ollama - LLM and Embedding Engine
   # ============================================
   ollama:
-    image: ollama/ollama:0.5.4
+    image: ollama/ollama:0.18.2
     container_name: openprodoc-ollama
     environment:
       OLLAMA_HOST: "0.0.0.0:11434"
@@ -150,29 +150,28 @@ services:
   # Pulls required models then exits
   # ============================================
   ollama-pull-models:
-    image: curlimages/curl:latest
+    image: ollama/ollama:0.18.2
     container_name: openprodoc-model-puller
     depends_on:
       ollama:
         condition: service_healthy
+    environment:
+      OLLAMA_HOST: "ollama:11434"
+      LLM_MODEL: "${LLM_MODEL:-llama3.1:latest}"
+      EMBEDDING_MODEL: "${EMBEDDING_MODEL:-nomic-embed-text:latest}"
     networks:
       - openprodoc-network
     entrypoint:
       - sh
       - -c
       - |
-        echo "Waiting for Ollama API..."
-        until curl -sf http://ollama:11434/ >/dev/null 2>&1; do
-          sleep 2
-        done
+        echo "Pulling LLM model: $${LLM_MODEL} (this may take several minutes)..."
+        ollama pull $${LLM_MODEL}
 
-        echo "Pulling LLM model: llama3.1:latest"
-        curl -sf http://ollama:11434/api/pull -d '{"name":"llama3.1:latest"}' | head -1
+        echo "Pulling embedding model: $${EMBEDDING_MODEL}..."
+        ollama pull $${EMBEDDING_MODEL}
 
-        echo "Pulling embedding model: nomic-embed-text:latest"
-        curl -sf http://ollama:11434/api/pull -d '{"name":"nomic-embed-text:latest"}' | head -1
-
-        echo "Models pulled successfully!"
+        echo "All models pulled successfully!"
     restart: "no"
 
   # ============================================
@@ -195,7 +194,7 @@ services:
       VECTOR_DB: "pgvector"
       PGVECTOR_DB_URL: "postgresql://rag_user:rag_password@pgvector:5432/rag_vectors"
       # RAG configuration
-      RAG_EMBEDDING_MODEL: "nomic-embed-text:latest"
+      RAG_EMBEDDING_MODEL: "${EMBEDDING_MODEL:-nomic-embed-text:latest}"
       RAG_EMBEDDING_ENGINE: "ollama"
       USE_EMBEDDING_MODEL_DOCKER: ""
       CHUNK_SIZE: "1500"

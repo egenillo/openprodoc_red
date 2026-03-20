@@ -52,11 +52,13 @@
 * **Native event-driven integration** - The external watcher container has been replaced by a CustomTask JAR that runs inside the OpenProdoc JVM, reacting to document and folder events in real time with zero additional containers
 * **Automatic user and group sync** - A built-in cron task replicates OpenProdoc users and groups to Open WebUI, preserving group memberships and permissions
 * **Production-grade stack** - Includes PGVector, Ollama (CPU-optimized), and Open WebUI
+* **GPU acceleration support** - Docker Compose includes auto-detection scripts for NVIDIA and AMD GPUs to accelerate LLM inference. Platform-specific start scripts (`start-linux.sh`, `start-windows.bat`) automatically detect available GPUs and apply the correct configuration. AMD ROCm is supported on Linux only; Windows users with AMD GPUs can use a native Ollama installation as an alternative
+* **Configurable models** - LLM and embedding models are configurable via environment variables (`LLM_MODEL`, `EMBEDDING_MODEL`) or a `.env` file, with sensible defaults
 * **See [docs/RAG_SETUP.md](docs/RAG_SETUP.md)** for deployment guide
 
 ----
 
-## 📋 Core ECM Features
+## 📋 Core DMS Features
 
 * **Multi-platform support** (Linux, Windows, Mac via containers)
 * **Multi-database support** with PostgreSQL optimization

@@ -3,11 +3,11 @@
 
 [🇬🇧 English](README.md) | [🇪🇸 Español](README.es.md) | [🇫🇷 Français](README.fr.md) | [🇩🇪 Deutsch](README.de.md) | [🇸🇦 العربية](README.ar.md)
 
-## Cloud-Native Document Management System
+## Cloud or Container Platform Document Management
 
-OpenProdoc Red is a Docker containerized packaging of the OpenProdoc Document Management System integrated with AI-oriented containers that allow interaction with the Document repository through an advanced chatbot. Additionally, the developed project allows including information from the document repository to customize responses (RAG), all without the need to publish information on the Internet, using local AI engines.
+**OpenProdoc Red** is a [Docker](https://en.wikipedia.org/wiki/Docker_(software)) containerized packaging of the [OpenProdoc](https://jhierrot.github.io/openprodoc/) Document Management System integrated with **Artificial Intelligence (AI)** oriented containers that allow interaction with the Document repository through an advanced chatbot. Additionally, the developed project allows including information from the document repository to **customize responses** ([RAG](https://en.wikipedia.org/wiki/Retrieval-augmented_generation)), all **without the need to publish information on the Internet**, using local AI engines.
 
-The use of containers enables deployment in productive and highly scalable environments using platforms such as Kubernetes. According to needs, each component can be scaled separately.
+The use of containers enables deployment in **productive and highly scalable environments** using platforms such as [Kubernetes](https://en.wikipedia.org/wiki/Kubernetes). According to needs, **each component can be scaled separately**.
 
 ----
 
@@ -25,7 +25,7 @@ The use of containers enables deployment in productive and highly scalable envir
 * **PostgreSQL 15** - Modern database with optimizations
 * **Helm charts** - Production-ready Kubernetes deployments
 * **Docker Compose** - Easy local development setup
-* **REST API enabled** - Full programmatic access
+
 
 ### Production-Ready Infrastructure
 * **Multi-stage Docker builds** - Optimized image sizes
@@ -60,8 +60,9 @@ The use of containers enables deployment in productive and highly scalable envir
 
 ----
 
-## 📋 Core DMS Features
+## 📋 OpenProdoc Features
 
+### Technical Features
 * **Multi-platform support** (Linux, Windows, Mac via containers)
 * **Multi-database support** with PostgreSQL optimization
   * PostgreSQL (recommended), MySQL, Oracle, DB2, SQLServer, SQLLite, HSQLDB
@@ -88,7 +89,7 @@ The use of containers enables deployment in productive and highly scalable envir
 
 ## 🏗️ Architecture
 
-### Deployment Components
+### OpenProdoc Red Deployment Components
 ```
 ┌─────────────────────────────────────┐
 │      OpenProdoc Core Engine         │
@@ -112,6 +113,8 @@ The use of containers enables deployment in productive and highly scalable envir
 * **Database (PostgreSQL)** - Metadata, users, permissions, configuration
 * **File System Volume** - Document binaries, configurable encryption
 * **Persistent Volumes** - Kubernetes-managed storage for data persistence
+
+Although the main elements of the OpenProdoc Red Architecture are predefined (such as the database), other elements of the [Standard OpenProdoc Architecture](https://jhierrot.github.io/openprodoc/help/EN/Architect.html) remain available, such as authentication alternatives or storing certain types of documents in other repositories.
 
 ----
 
@@ -166,9 +169,9 @@ See [Helm Deployment Guide](docs/HELM_DEPLOYMENT_GUIDE.md) for detailed instruct
 
 ----
 
-## 📡 REST API
+## 📡 Development and OpenProdoc REST API
 
-OpenProdoc Red includes a full REST API for programmatic access.
+OpenProdoc includes a full REST API that is also published in the containers of this project to facilitate development and integration.
 
 ### Quick Example
 
@@ -201,6 +204,13 @@ curl -H "Authorization: Bearer <token>" \
 **Test Scripts**:
 * Linux/Mac: `./docs/api/test-api.sh`
 * Windows: `docs/api/test-api.bat`
+
+**Other development options**:
+
+In addition to the REST API, **OpenProdoc has a Java API and the ability to develop integrations that include ALL functions, including administration**.
+
+The complete OpenProdoc development documentation (Java, REST, advanced configuration, etc.) is available at: [Development SDK](https://jhierrot.github.io/openprodoc/Docs/OPD_Development3.0.2.html)
+
 
 ----
 
@@ -317,17 +327,22 @@ kubectl logs -f <pod-name>
 
 ----
 
-## 🔄 Migration from Classic OpenProdoc
+## 🔄 Migration from Existing OpenProdoc Installations
 
-OpenProdoc Red maintains **full compatibility** with existing OpenProdoc databases. Migration involves:
+OpenProdoc Red maintains the OpenProdoc data model. If the database used is PostgreSQL, **compatibility is total** and migration involves:
 
-1. **Export existing database** from classic OpenProdoc
+1. **Export existing database** from OpenProdoc
 2. **Import into PostgreSQL** in the new environment
 3. **Copy document storage** to persistent volume
 4. **Configure environment variables** matching old configuration
 5. **Deploy using Docker Compose or Helm**
 
 The application will detect the existing database and skip initial installation.
+
+
+**If the existing installation uses a different database, migration is also possible, although slightly more complex.**
+
+The recommendation would be to export the definitions (Users, Groups, Document Types, Tasks, etc.) from the administration options and then, using the OpenProdoc Swing thick client (see architecture options), export entire folder branches to a file system and import them into the new environment, also using the thick client.
 
 ----
 
@@ -337,7 +352,8 @@ The application will detect the existing database and skip initial installation.
 * **[REST API Usage Guide](docs/api/API_USAGE_GUIDE.md)** - Comprehensive API reference
 * **[REST API Quick Reference](docs/api/API_QUICK_REFERENCE.md)** - Quick command lookup
 * **[Documentation Index](docs/README.md)** - All available documentation
-
+* **[OpenProdoc Online Help](https://jhierrot.github.io/openprodoc/help/EN/HelpIndex.html)** - OpenProdoc help also available in the Help menu after installation.
+* **[Detailed OpenProdoc Manual](https://jhierrot.github.io/openprodoc/Docs/Introducci%C3%B3nG.D.OpenProdoc.html)** - A PDF document gradually explaining all OpenProdoc functions, including administration and configuration.
 
 ----
 
@@ -373,8 +389,9 @@ Contributions welcome for:
 
 ## 🙏 Acknowledgments
 
-**Original OpenProdoc** - Created by Joaquín Hierro
-**OpenProdoc Red** - Cloud-native containerization and Kubernetes deployment
+**OpenProdoc** - Created by Joaquín Hierro
+
+**OpenProdoc Red** - Cloud-native containerization, artificial intelligence capabilities and Kubernetes deployment
 
 This project maintains full compatibility with the original OpenProdoc while providing modern cloud deployment capabilities.
 

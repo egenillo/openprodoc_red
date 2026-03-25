@@ -3,11 +3,11 @@
 
 [🇬🇧 English](README.md) | [🇪🇸 Español](README.es.md) | [🇫🇷 Français](README.fr.md) | [🇩🇪 Deutsch](README.de.md) | [🇸🇦 العربية](README.ar.md)
 
-## Sistema de Gestión Documental en la Nube
+## Gestión Documental en la Nube o Plataformas de Contenedores
 
-OpenProdoc Red es un empaquetado en contenedores Docker del Gestor Documental OpenProdoc integrado con contenedores orientados a Inteligencia Artificial (IA) que permiten interactuar con el repositorio Documental por medio de un chatbot avanzado. Además, el proyecto desarrollado permite incluir la información del repositorio de documentos para personalizar las respuestas (RAG) todo ello sin necesidad de publicar la información en Internet, usando motores locales de IA.
+**OpenProdoc Red** es un empaquetado en contenedores [Docker](https://es.wikipedia.org/wiki/Docker_(software)) del Gestor Documental [OpenProdoc](https://jhierrot.github.io/openprodoc/) integrado con contenedores orientados a **Inteligencia Artificial (IA)** que permiten interactuar con el repositorio Documental por medio de un chatbot avanzado. Además, el proyecto desarrollado permite incluir la información del repositorio de documentos para **personalizar las respuestas** ([RAG](https://es.wikipedia.org/wiki/Generaci%C3%B3n_aumentada_por_recuperaci%C3%B3n)) todo ello **sin necesidad de publicar la información en Internet**, usando motores locales de IA.
 
-El uso de contenedores permite el despliegue en entornos productivos y muy escalables usando plataformas como Kubernetes. De acuerdo a las necesidades puede escalarse cada uno de los componentes por separado.
+El uso de contenedores permite el despliegue en **entornos productivos y muy escalables** usando plataformas como [Kubernetes](https://es.wikipedia.org/wiki/Kubernetes). De acuerdo a las necesidades **puede escalarse cada uno de los componentes por separado**.
 
 ----
 
@@ -25,7 +25,7 @@ El uso de contenedores permite el despliegue en entornos productivos y muy escal
 * **PostgreSQL 15** - Base de datos moderna con optimizaciones
 * **Helm charts** - Despliegues Kubernetes listos para producción
 * **Docker Compose** - Configuración fácil para desarrollo local
-* **API REST habilitada** - Acceso programático completo
+
 
 ### Infraestructura Lista para Producción
 * **Construcciones Docker multi-etapa** - Tamaños de imagen optimizados
@@ -58,9 +58,10 @@ El uso de contenedores permite el despliegue en entornos productivos y muy escal
 
 ----
 
-## 📋 Características ECM Principales
+## 📋 Características OpenProdoc
 
-* **Soporte multiplataforma** (Linux, Windows, Mac vía contenedores)
+### Características Técnicas
+* **Soporte multiplataforma** (Linux, Windows, Mac)
 * **Soporte para múltiples bases de datos** con optimización para PostgreSQL
   * PostgreSQL (recomendado), MySQL, Oracle, DB2, SQLServer, SQLLite, HSQLDB
 * **Múltiples métodos de autenticación** (LDAP, Base de datos, OS, Integrado)
@@ -77,16 +78,18 @@ El uso de contenedores permite el despliegue en entornos productivos y muy escal
 * **Gestión de tesauros** con soporte para estándar SKOS-RDF
 * **Validación de metadatos** contra términos de tesauro
 * **Control de versiones** con flujo de trabajo checkout/checkin
-* **Gestión del ciclo de vida** de documentos con purga
+* **Gestión del ciclo de vida** de documentos con purgado
 * **Búsqueda de texto completo** con Apache Lucene
 * **Jerarquía de carpetas** con herencia de permisos
 * **Capacidades de importación/exportación** de documentos
+
+
 
 ----
 
 ## 🏗️ Arquitectura
 
-### Componentes de Despliegue
+### Componentes de Despliegue OpenProdoc Red
 ```
 ┌─────────────────────────────────────┐
 │      OpenProdoc Core Engine         │
@@ -110,6 +113,8 @@ El uso de contenedores permite el despliegue en entornos productivos y muy escal
 * **Base de datos (PostgreSQL)** - Metadatos, usuarios, permisos, configuración
 * **Volumen del sistema de archivos** - Binarios de documentos, encriptación configurable
 * **Volúmenes persistentes** - Almacenamiento gestionado por Kubernetes para persistencia de datos
+
+Aunque los elementos principales de la Arquitectura de OpenProdoc Red viene dados (como la base de datos), otros elementos de la [Arquitectura Estandar de OpenProdoc](https://jhierrot.github.io/openprodoc/help/ES/Architect.html) siguen estando disponibles, como las alternativas de autenticación o el almacenamiento de algunos tipos de documentos en otros repositorios.
 
 ----
 
@@ -164,9 +169,9 @@ Consulte la [Guía de Despliegue Helm](docs/HELM_DEPLOYMENT_GUIDE.md) para instr
 
 ----
 
-## 📡 API REST
+## 📡 Desarrollo y API REST OpenProdoc
 
-OpenProdoc Red incluye una API REST completa para acceso programático.
+OpenProdoc incluye una API REST completa que se publica igualmente en los contenedores de este proyecto para facilitar el desarrollo y la integración.
 
 ### Ejemplo Rápido
 
@@ -199,6 +204,13 @@ curl -H "Authorization: Bearer <token>" \
 **Scripts de Prueba**:
 * Linux/Mac: `./docs/api/test-api.sh`
 * Windows: `docs/api/test-api.bat`
+
+**Otras formas de desarrollo**:
+
+Además del API REST, **OpenProdoc dispone de un API Java y de la posibilidad de realizar desarrollos e integraciones que incluyen TODAS las funciones, incluidas las de administración**.
+
+La documentación completa de desarrollo OpenProdoc (Java, REST, configuración avanzada, etc) está disponible en: [Development SDK](https://jhierrot.github.io/openprodoc/Docs/OPD_Development3.0.2.html)
+
 
 ----
 
@@ -315,17 +327,22 @@ kubectl logs -f <nombre-pod>
 
 ----
 
-## 🔄 Migración desde OpenProdoc Clásico
+## 🔄 Migración desde instalaciones OpenProdoc existentes
 
-OpenProdoc Red mantiene **compatibilidad total** con bases de datos OpenProdoc existentes. La migración involucra:
+OpenProdoc Red mantiene el modelo de datos de OpenProdoc. Si la base de datos utilizada es PostgreSQL, **la compatibilidad es total** y la migración involucra:
 
-1. **Exportar base de datos existente** desde OpenProdoc clásico
+1. **Exportar base de datos existente** desde OpenProdoc 
 2. **Importar en PostgreSQL** en el nuevo entorno
 3. **Copiar almacenamiento de documentos** al volumen persistente
 4. **Configurar variables de entorno** coincidiendo con la configuración antigua
 5. **Desplegar usando Docker Compose o Helm**
 
 La aplicación detectará la base de datos existente y omitirá la instalación inicial.
+
+
+**Si la instalación existente utiliza otra base de datos, tambien es posible la migración, aunque un poco más compleja.**
+
+La recomendación sería exportar las definiciones (Usuarios, Grupos, Tipos documentales, Tareas, etc) desde las opciones de administración y luego, utilizando el cliente pesado Swing de OpenProdoc (vease las opciones de arquitectura) exportar las ramas enteras de carpetas a un sistema de archivos e importarlas al nuevo entorno, igualmente con el cliente pesado.
 
 ----
 
@@ -335,6 +352,8 @@ La aplicación detectará la base de datos existente y omitirá la instalación 
 * **[Guía de Uso de API REST](docs/api/API_USAGE_GUIDE.md)** - Referencia completa de API
 * **[Referencia Rápida de API REST](docs/api/API_QUICK_REFERENCE.md)** - Búsqueda rápida de comandos
 * **[Índice de Documentación](docs/README.md)** - Toda la documentación disponible
+* **[Ayuda Online OpenProdoc](https://jhierrot.github.io/openprodoc/help/ES/HelpIndex.html)** - Ayuda de OpenProdoc tambien disponible en el menu Help tras la instalación.
+* **[Manual detallado de OpenProdoc](https://jhierrot.github.io/openprodoc/Docs/Introducci%C3%B3nG.D.OpenProdoc.html)** - Un documento PDF explicando gradualmente todas las funciones de OpenProdoc, incluyendo la administración y configuración.
 
 ----
 
@@ -384,15 +403,16 @@ Se aceptan contribuciones para:
 
 * **Documentación**: Ver carpeta `docs/`
 * **Problemas**: Reportar errores y solicitudes de características
-* **OpenProdoc Original**: https://jhierrot.github.io/openprodoc/
+* **OpenProdoc**: https://jhierrot.github.io/openprodoc/
 * **Licencia**: Licencia AGPL-3.0
 
 ----
 
 ## 🙏 Agradecimientos
 
-**OpenProdoc Original** - Creado por Joaquín Hierro
-**OpenProdoc Red** - Containerización nativa en la nube y despliegue en Kubernetes
+**OpenProdoc** - Creado por Joaquín Hierro
+
+**OpenProdoc Red** - Containerización nativa en la nube, capacidades de inteligencia artificial y despliegue en Kubernetes
 
 Este proyecto mantiene compatibilidad total con el OpenProdoc original mientras proporciona capacidades modernas de despliegue en la nube.
 

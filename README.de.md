@@ -5,7 +5,9 @@
 
 ## Cloud-Native Dokumentenmanagementsystem
 
-**OpenProdoc Red** ist eine Kubernetes-bereite Version des OpenProdoc DMS (Dokumentenmanagementsystem). Diese Edition wurde containerisiert und für Cloud-Deployment mit Helm Charts, Docker-Support und produktionsreifer Infrastruktur optimiert.
+OpenProdoc Red ist eine Docker-Container-Paketierung des OpenProdoc Dokumentenmanagementsystems, integriert mit KI-orientierten Containern, die eine Interaktion mit dem Dokumenten-Repository über einen fortschrittlichen Chatbot ermöglichen. Darüber hinaus ermöglicht das entwickelte Projekt die Einbeziehung von Informationen aus dem Dokumenten-Repository zur Personalisierung der Antworten (RAG), und das alles ohne die Notwendigkeit, Informationen im Internet zu veröffentlichen, unter Verwendung lokaler KI-Engines.
+
+Die Verwendung von Containern ermöglicht die Bereitstellung in produktiven und hoch skalierbaren Umgebungen unter Verwendung von Plattformen wie Kubernetes. Je nach Bedarf kann jede einzelne Komponente separat skaliert werden.
 
 ----
 

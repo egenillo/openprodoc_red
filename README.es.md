@@ -5,7 +5,9 @@
 
 ## Sistema de Gestión Documental en la Nube
 
-**OpenProdoc Red** es una versión de OpenProdoc DMS (Sistema de Gestión Documental) preparada para Kubernetes. Esta edición ha sido containerizada y optimizada para despliegue en la nube con Helm charts, soporte para Docker e infraestructura de nivel de producción.
+OpenProdoc Red es un empaquetado en contenedores Docker del Gestor Documental OpenProdoc integrado con contenedores orientados a Inteligencia Artificial (IA) que permiten interactuar con el repositorio Documental por medio de un chatbot avanzado. Además, el proyecto desarrollado permite incluir la información del repositorio de documentos para personalizar las respuestas (RAG) todo ello sin necesidad de publicar la información en Internet, usando motores locales de IA.
+
+El uso de contenedores permite el despliegue en entornos productivos y muy escalables usando plataformas como Kubernetes. De acuerdo a las necesidades puede escalarse cada uno de los componentes por separado.
 
 ----
 

@@ -134,15 +134,43 @@ docker compose up -d
 
 Wenn nichts gesetzt ist, werden die Standardwerte (`llama3.1:latest` und `nomic-embed-text:latest`) verwendet.
 
-#### GPU-Unterstuetzung fuer Ollama
+#### GPU-Unterstuetzung und Ollama-Image-Auswahl
 
-Ollama kann eine GPU nutzen, um die LLM-Inferenz erheblich zu beschleunigen. Startskripte werden bereitgestellt, die die GPU-Verfuegbarkeit automatisch erkennen und die richtige Docker Compose-Konfiguration anwenden:
+Ollama kann eine GPU nutzen, um die LLM-Inferenz erheblich zu beschleunigen. Startskripte werden bereitgestellt, die die GPU-Verfuegbarkeit automatisch erkennen und die richtige Docker Compose-Konfiguration anwenden.
+
+**Ollama-Image-Optionen:**
+
+| Image | Groesse | Anwendungsfall |
+|---|---|---|
+| `ollama/ollama:0.18.2` | **~3,86 GB** | Vollstaendiges Image mit GPU-Treibern fuer NVIDIA und AMD. Verwenden, wenn GPU verfuegbar ist. |
+| `alpine/ollama:0.18.2` | **~70 MB** | Reduziertes CPU-only-Image ohne GPU-Treiber. Verwenden, wenn keine GPU verfuegbar ist. |
+
+Wenn keine GPU erkannt wird, verwenden die Startskripte automatisch das leichtgewichtige `alpine/ollama`-Image ueber das Override `docker-compose.cpu-light.yml`, wodurch ein 3,86 GB Download vermieden wird, der ohne GPU keinen Nutzen bringt.
+
+**Optionen der Startskripte:**
 
 | Plattform | Skript | GPU-Unterstuetzung |
 |---|---|---|
 | Linux | `./start-linux.sh` | NVIDIA und AMD (automatisch erkannt) |
 | Windows | `start-windows.bat` | Nur NVIDIA |
 | macOS | Nicht noetig — verwenden Sie direkt `docker compose up -d` | Keine (Docker Desktop laeuft in einer VM, kein GPU-Passthrough) |
+
+Die Skripte akzeptieren einen optionalen Parameter, um einen bestimmten Modus zu erzwingen:
+
+```bash
+./start-linux.sh              # Auto-Erkennung: GPU → vollstaendiges Image, keine GPU → alpine
+./start-linux.sh --light      # alpine/ollama erzwingen (~70 MB, nur CPU)
+./start-linux.sh --cpu        # ollama/ollama erzwingen (~3,86 GB, CPU-Modus, kein GPU-Override)
+./start-linux.sh --nvidia     # NVIDIA-GPU-Modus erzwingen
+./start-linux.sh --amd        # AMD-GPU-Modus erzwingen (nur Linux)
+```
+
+```cmd
+start-windows.bat             # Auto-Erkennung: NVIDIA → vollstaendiges Image, keine GPU → alpine
+start-windows.bat --light     # alpine/ollama erzwingen (~70 MB, nur CPU)
+start-windows.bat --cpu       # ollama/ollama erzwingen (~3,86 GB, CPU-Modus)
+start-windows.bat --nvidia    # NVIDIA-GPU-Modus erzwingen
+```
 
 **Linux:**
 
@@ -152,7 +180,7 @@ chmod +x start-linux.sh
 ./start-linux.sh
 ```
 
-Das Skript erkennt NVIDIA-GPUs ueber `nvidia-smi` und AMD-GPUs ueber `/dev/kfd` und startet dann Docker Compose mit der entsprechenden Override-Datei (`docker-compose.nvidia.yml` oder `docker-compose.amd.yml`). Wenn keine GPU gefunden wird, startet es im reinen CPU-Modus.
+Das Skript erkennt NVIDIA-GPUs ueber `nvidia-smi` und AMD-GPUs ueber `/dev/kfd` und startet dann Docker Compose mit der entsprechenden Override-Datei (`docker-compose.nvidia.yml` oder `docker-compose.amd.yml`). Wenn keine GPU gefunden wird, verwendet es `docker-compose.cpu-light.yml`, um auf das leichtgewichtige `alpine/ollama`-Image zu wechseln.
 
 **Voraussetzungen fuer die GPU-Nutzung:**
 - **NVIDIA**: NVIDIA-Treiber und das [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) muessen auf dem Host installiert sein. Unterstuetzt unter Linux und Windows.
@@ -165,7 +193,7 @@ cd docker
 start-windows.bat
 ```
 
-Das Skript prueft ueber `nvidia-smi` auf NVIDIA-GPUs. Unter Windows wird GPU-Passthrough in Docker Desktop offiziell nur fuer NVIDIA-GPUs mit dem WSL2-Backend unterstuetzt. Es gibt kein spezialisiertes Docker-Image fuer ROCm-Beschleunigung unter Windows.
+Das Skript prueft ueber `nvidia-smi` auf NVIDIA-GPUs. Wenn keine GPU gefunden wird, verwendet es `alpine/ollama` (~70 MB) anstelle des vollstaendigen Images (~3,86 GB). Unter Windows wird GPU-Passthrough in Docker Desktop offiziell nur fuer NVIDIA-GPUs mit dem WSL2-Backend unterstuetzt. Es gibt kein spezialisiertes Docker-Image fuer ROCm-Beschleunigung unter Windows.
 
 **Windows mit AMD-GPU:** Wenn Sie eine AMD Radeon GPU unter Windows haben, wird empfohlen, Ollama nativ zu installieren anstatt Docker zu verwenden:
 

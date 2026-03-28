@@ -704,7 +704,7 @@ This MCP server is part of the OpenProdoc ecosystem. Please refer to the main Op
 
 ## Support
 
-For OpenProdoc-specific questions, consult the OpenProdoc documentation.
+For OpenProdoc-specific questions, consult [OpenProdoc documentation](https://jhierrot.github.io/openprodoc/help/EN/HelpIndex.html)
 For MCP-related questions, see the [MCP Documentation](https://modelcontextprotocol.io).
 
 ## Version

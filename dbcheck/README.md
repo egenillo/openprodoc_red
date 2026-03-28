@@ -67,7 +67,7 @@ fi
 
 ## Development Notes
 
-Based on OpenProdoc Developer Documentation Section 4.2.1:
+Based on OpenProdoc Developer Documentation Section 4.2.1 [Development SDK](https://jhierrot.github.io/openprodoc/Docs/OPD_Development3.0.2.html):
 
 - Uses `ProdocFW.InitProdoc()` to start the framework
 - Uses `ProdocFW.getSession()` to authenticate and obtain a session

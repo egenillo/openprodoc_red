@@ -1,13 +1,16 @@
 @echo off
 setlocal
 
-:: OpenProdoc Red — Start Script (Windows)
+:: OpenProdoc Red — External Upgrade Start Script (Windows)
 ::
 :: Usage:
 ::   start-windows.bat           Auto-detect GPU
 ::   start-windows.bat --light   Force CPU-light mode (alpine/ollama, ~70 MB)
 ::   start-windows.bat --cpu     Force standard CPU mode (ollama/ollama, ~1.2 GB)
 ::   start-windows.bat --nvidia  Force NVIDIA GPU mode
+
+echo OpenProdoc Red - External Upgrade Start Script
+echo.
 
 set MODE=%~1
 
@@ -46,4 +49,7 @@ docker compose -f docker-compose.yml up -d
 goto :end
 
 :end
+echo.
+echo RAG services starting. Check status with: docker compose logs -f
+echo Open WebUI will be available at: http://localhost:8082
 endlocal

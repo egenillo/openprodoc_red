@@ -1,0 +1,11 @@
+# AMD GPU override — Linux only.
+# The ollama/ollama:rocm image is specifically designed for Linux systems with AMD GPUs.
+# It is not supported on Windows or macOS.
+services:
+  ollama:
+    image: ollama/ollama:0.18.2-rocm
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - video

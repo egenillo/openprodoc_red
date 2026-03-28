@@ -1,0 +1,205 @@
+version: '3.8'
+
+# ============================================================
+# OpenProdoc Red — External OpenProdoc Upgrade
+# ============================================================
+# This docker-compose deploys ONLY the AI/RAG components
+# (pgvector, ollama, openwebui, rag-init) to add RAG and
+# chatbot capabilities to an EXISTING OpenProdoc installation
+# running on the same machine (or reachable host).
+#
+# The core-engine and postgres services are NOT included.
+# Instead, the containers connect to your existing OpenProdoc
+# via REST API and direct database access.
+#
+# Prerequisites:
+#   - An existing OpenProdoc installation with REST API enabled
+#   - Network access from Docker containers to the host
+#   - See README.md in this folder for full setup instructions
+# ============================================================
+
+services:
+  # ============================================
+  # pgvector - Vector Database for RAG
+  # ============================================
+  pgvector:
+    image: pgvector/pgvector:pg16
+    container_name: openprodoc-pgvector
+    environment:
+      POSTGRES_DB: rag_vectors
+      POSTGRES_USER: rag_user
+      POSTGRES_PASSWORD: rag_password
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - pgvector-data:/var/lib/postgresql/data
+      - ./init-pgvector.sql:/docker-entrypoint-initdb.d/init-pgvector.sql:ro
+    networks:
+      - openprodoc-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag_user -d rag_vectors"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ============================================
+  # Ollama - LLM and Embedding Engine
+  # ============================================
+  ollama:
+    image: ollama/ollama:0.18.2
+    container_name: openprodoc-ollama
+    environment:
+      OLLAMA_HOST: "0.0.0.0:11434"
+      OLLAMA_KEEP_ALIVE: "24h"
+      OLLAMA_NUM_PARALLEL: "4"
+    volumes:
+      - ollama-data:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - openprodoc-network
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # ============================================
+  # Ollama Model Puller (one-shot init container)
+  # Pulls required models then exits
+  # ============================================
+  ollama-pull-models:
+    image: ollama/ollama:0.18.2
+    container_name: openprodoc-model-puller
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: "ollama:11434"
+      LLM_MODEL: "${LLM_MODEL:-llama3.1:latest}"
+      EMBEDDING_MODEL: "${EMBEDDING_MODEL:-nomic-embed-text:latest}"
+    networks:
+      - openprodoc-network
+    entrypoint:
+      - sh
+      - -c
+      - |
+        echo "Pulling LLM model: $${LLM_MODEL} (this may take several minutes)..."
+        ollama pull $${LLM_MODEL}
+
+        echo "Pulling embedding model: $${EMBEDDING_MODEL}..."
+        ollama pull $${EMBEDDING_MODEL}
+
+        echo "All models pulled successfully!"
+    restart: "no"
+
+  # ============================================
+  # Open WebUI - RAG Interface
+  # Accessible at http://localhost:8082
+  # ============================================
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:v0.6.6
+    container_name: openprodoc-openwebui
+    depends_on:
+      ollama:
+        condition: service_healthy
+      pgvector:
+        condition: service_healthy
+    environment:
+      # Ollama connection
+      OLLAMA_BASE_URL: "http://ollama:11434"
+      OLLAMA_API_BASE_URL: "http://ollama:11434"
+      # Vector database
+      VECTOR_DB: "pgvector"
+      PGVECTOR_DB_URL: "postgresql://rag_user:rag_password@pgvector:5432/rag_vectors"
+      # RAG configuration
+      RAG_EMBEDDING_MODEL: "${EMBEDDING_MODEL:-nomic-embed-text:latest}"
+      RAG_EMBEDDING_ENGINE: "ollama"
+      USE_EMBEDDING_MODEL_DOCKER: ""
+      CHUNK_SIZE: "1500"
+      CHUNK_OVERLAP: "100"
+      # WebUI settings
+      WEBUI_NAME: "OpenProdoc RAG Assistant"
+      WEBUI_SECRET_KEY: "openprodoc-secret-key-change-in-production"
+      ENABLE_RAG_WEB_SEARCH: "false"
+      ENABLE_IMAGE_GENERATION: "false"
+      # Signup/user config (allow rag-init to register the watcher admin)
+      ENABLE_SIGNUP: "true"
+      DEFAULT_USER_ROLE: "admin"
+      # SCIM for group management
+      SCIM_ENABLED: "true"
+      SCIM_TOKEN: "openprodoc-scim-token-change-in-production"
+    volumes:
+      - openwebui-data:/app/backend/data
+    ports:
+      - "8082:8080"
+    networks:
+      - openprodoc-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  # ============================================
+  # RAG CustomTask Init (one-shot)
+  # Connects to your EXISTING OpenProdoc to:
+  #   - Upload the CustomTask JAR via REST API
+  #   - Insert event/cron task definitions via SQL
+  #   - Create the watcher admin account in Open WebUI
+  # ============================================
+  rag-init:
+    image: postgres:16-alpine
+    container_name: openprodoc-rag-init
+    depends_on:
+      openwebui:
+        condition: service_healthy
+    environment:
+      # ----- EXTERNAL OPENPRODOC CONNECTION -----
+      # URL as seen FROM INSIDE the container (host.docker.internal = host machine)
+      OPENPRODOC_URL: "${OPENPRODOC_URL:-http://host.docker.internal:8080}"
+      # OpenProdoc credentials
+      OPD_ROOT_USER: "${OPD_ROOT_USER:-root}"
+      OPD_ROOT_PASSWORD: "${OPD_ROOT_PASSWORD:-admin}"
+      # ----- EXTERNAL OPENPRODOC DATABASE -----
+      POSTGRES_HOST: "${OPD_POSTGRES_HOST:-host.docker.internal}"
+      POSTGRES_PORT: "${OPD_POSTGRES_PORT:-5432}"
+      POSTGRES_DB: "${OPD_POSTGRES_DB:-prodoc}"
+      POSTGRES_USER: "${OPD_POSTGRES_USER:-user1}"
+      POSTGRES_PASSWORD: "${OPD_POSTGRES_PASSWORD:-pass1}"
+      # ----- OPEN WEBUI (internal) -----
+      OPENWEBUI_URL: "http://openwebui:8080"
+      # This is the URL the CustomTask JAR will use to reach Open WebUI
+      # Since the JAR runs on the HOST (inside existing OpenProdoc JVM),
+      # it must use the host-visible port, NOT the internal Docker service name
+      OPENWEBUI_HOST_URL: "${OPENWEBUI_HOST_URL:-http://localhost:8082}"
+      OPENWEBUI_ADMIN_EMAIL: "${OPENWEBUI_ADMIN_EMAIL:-watcher@openprodoc.local}"
+      OPENWEBUI_ADMIN_PASSWORD: "${OPENWEBUI_ADMIN_PASSWORD:-12345678}"
+      # ----- JAR & SYNC -----
+      JAR_PATH: "/jar/openprodoc-ragtask.jar"
+      SYNC_INTERVAL_MINS: "${SYNC_INTERVAL_MINS:-1}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./rag-init-external.sh:/rag-init.sh:ro
+      - ../docker/openprodoc-ragtask.jar:/jar/openprodoc-ragtask.jar:ro
+    entrypoint: ["sh", "/rag-init.sh"]
+    networks:
+      - openprodoc-network
+    restart: "no"
+
+volumes:
+  pgvector-data:
+    driver: local
+  ollama-data:
+    driver: local
+  openwebui-data:
+    driver: local
+
+networks:
+  openprodoc-network:
+    driver: bridge

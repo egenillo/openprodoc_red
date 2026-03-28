@@ -1,5 +1,5 @@
 #!/bin/bash
-# OpenProdoc Red — Start Script (Linux)
+# OpenProdoc Red — External Upgrade Start Script (Linux)
 #
 # Usage:
 #   ./start-linux.sh           Auto-detect GPU
@@ -56,3 +56,7 @@ case $MODE in
     exit 1
     ;;
 esac
+
+echo ""
+echo "RAG services starting. Check status with: docker compose logs -f"
+echo "Open WebUI will be available at: http://localhost:8082"

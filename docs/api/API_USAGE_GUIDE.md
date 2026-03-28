@@ -835,9 +835,15 @@ public class OpenProdocAPI {
 
 ## Additional Resources
 
-- OpenProdoc Documentation: Check `/ProdocWeb2/help/` on your installation
+- GitHub: [OpenProdoc Repository](https://github.com/jhierrot/openprodoc)
+- OpenProdoc Documentation: Check `/ProdocWeb2/help/` on your installation or Help menu in Web Application
 - Source Code: Review Java source in `ProdocWeb2/src/java/APIRest/`
-- GitHub: [OpenProdoc Repository](https://jhierrot.github.io/openprodoc/)
 - Community Support: OpenProdoc user forums and mailing lists
 
+---
 
+## API Version
+
+This guide covers OpenProdoc REST API version 3.0.x
+
+Last Updated: October 2025

@@ -134,15 +134,43 @@ docker compose up -d
 
 إذا لم يتم تعيينها، يتم استخدام القيم الافتراضية (`llama3.1:latest` و `nomic-embed-text:latest`).
 
-#### دعم GPU لـ Ollama
+#### دعم GPU واختيار صورة Ollama
 
-يمكن لـ Ollama استخدام GPU لتسريع استدلال LLM بشكل كبير. يتم توفير سكربتات بدء للكشف التلقائي عن توفر GPU وتطبيق تهيئة Docker Compose المناسبة:
+يمكن لـ Ollama استخدام GPU لتسريع استدلال LLM بشكل كبير. يتم توفير سكربتات بدء للكشف التلقائي عن توفر GPU وتطبيق تهيئة Docker Compose المناسبة.
+
+**خيارات صورة Ollama:**
+
+| الصورة | الحجم | حالة الاستخدام |
+|---|---|---|
+| `ollama/ollama:0.18.2` | **~3.86 جيجابايت** | صورة كاملة مع تعريفات GPU لـ NVIDIA و AMD. تُستخدم عند توفر GPU. |
+| `alpine/ollama:0.18.2` | **~70 ميجابايت** | صورة مُصغّرة للمعالج المركزي فقط بدون تعريفات GPU. تُستخدم عند عدم توفر GPU. |
+
+عندما لا يتم الكشف عن GPU، تستخدم سكربتات البدء تلقائياً صورة `alpine/ollama` الخفيفة عبر ملف التجاوز `docker-compose.cpu-light.yml`، مما يتجنب تنزيل 3.86 جيجابايت لا يفيد بدون GPU.
+
+**خيارات سكربتات البدء:**
 
 | المنصة | السكربت | دعم GPU |
 |---|---|---|
 | Linux | `./start-linux.sh` | NVIDIA و AMD (كشف تلقائي) |
 | Windows | `start-windows.bat` | NVIDIA فقط |
 | macOS | غير مطلوب — استخدم `docker compose up -d` مباشرة | لا يوجد (Docker Desktop يعمل في VM، لا يوجد تمرير GPU) |
+
+تقبل السكربتات معاملاً اختيارياً لفرض وضع محدد:
+
+```bash
+./start-linux.sh              # كشف تلقائي: GPU → صورة كاملة، بدون GPU → alpine
+./start-linux.sh --light      # فرض alpine/ollama (~70 ميجابايت، معالج مركزي فقط)
+./start-linux.sh --cpu        # فرض ollama/ollama (~3.86 جيجابايت، وضع المعالج المركزي، بدون تجاوز GPU)
+./start-linux.sh --nvidia     # فرض وضع NVIDIA GPU
+./start-linux.sh --amd        # فرض وضع AMD GPU (Linux فقط)
+```
+
+```cmd
+start-windows.bat             # كشف تلقائي: NVIDIA → صورة كاملة، بدون GPU → alpine
+start-windows.bat --light     # فرض alpine/ollama (~70 ميجابايت، معالج مركزي فقط)
+start-windows.bat --cpu       # فرض ollama/ollama (~3.86 جيجابايت، وضع المعالج المركزي)
+start-windows.bat --nvidia    # فرض وضع NVIDIA GPU
+```
 
 **Linux:**
 
@@ -152,7 +180,7 @@ chmod +x start-linux.sh
 ./start-linux.sh
 ```
 
-يكشف السكربت عن وحدات NVIDIA GPU عبر `nvidia-smi` ووحدات AMD GPU عبر `/dev/kfd`، ثم يطلق Docker Compose مع ملف التجاوز المناسب (`docker-compose.nvidia.yml` أو `docker-compose.amd.yml`). إذا لم يتم العثور على GPU، يبدأ في وضع المعالج المركزي فقط.
+يكشف السكربت عن وحدات NVIDIA GPU عبر `nvidia-smi` ووحدات AMD GPU عبر `/dev/kfd`، ثم يطلق Docker Compose مع ملف التجاوز المناسب (`docker-compose.nvidia.yml` أو `docker-compose.amd.yml`). إذا لم يتم العثور على GPU، يستخدم `docker-compose.cpu-light.yml` للتبديل إلى صورة `alpine/ollama` الخفيفة.
 
 **المتطلبات الأساسية لاستخدام GPU:**
 - **NVIDIA**: يجب تثبيت تعريفات NVIDIA و [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) على الجهاز المضيف. مدعوم على Linux و Windows.
@@ -165,7 +193,7 @@ cd docker
 start-windows.bat
 ```
 
-يتحقق السكربت من وجود NVIDIA GPU عبر `nvidia-smi`. على Windows، تمرير GPU في Docker Desktop مدعوم رسمياً فقط لوحدات NVIDIA GPU باستخدام واجهة WSL2 الخلفية. لا توجد صورة Docker متخصصة لتسريع ROCm على Windows.
+يتحقق السكربت من وجود NVIDIA GPU عبر `nvidia-smi`. إذا لم يتم العثور على GPU، يستخدم `alpine/ollama` (~70 ميجابايت) بدلاً من الصورة الكاملة (~3.86 جيجابايت). على Windows، تمرير GPU في Docker Desktop مدعوم رسمياً فقط لوحدات NVIDIA GPU باستخدام واجهة WSL2 الخلفية. لا توجد صورة Docker متخصصة لتسريع ROCm على Windows.
 
 **Windows مع AMD GPU:** إذا كان لديك AMD Radeon GPU على Windows، فالنهج الموصى به هو تثبيت Ollama محلياً بدلاً من استخدام Docker:
 

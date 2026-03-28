@@ -6,7 +6,7 @@ setlocal
 :: Usage:
 ::   start-windows.bat           Auto-detect GPU
 ::   start-windows.bat --light   Force CPU-light mode (alpine/ollama, ~70 MB)
-::   start-windows.bat --cpu     Force standard CPU mode (ollama/ollama, ~1.2 GB)
+::   start-windows.bat --cpu     Force standard CPU mode (ollama/ollama, ~3.86 GB)
 ::   start-windows.bat --nvidia  Force NVIDIA GPU mode
 
 set MODE=%~1

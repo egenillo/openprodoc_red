@@ -1,4 +1,4 @@
-# CPU-light override — uses alpine/ollama (~70 MB) instead of ollama/ollama (~1.2 GB).
+# CPU-light override — uses alpine/ollama (~70 MB) instead of ollama/ollama (~3.86 GB).
 # This is a stripped-down, CPU-only image with no GPU drivers.
 # Use when no GPU is available and you want faster image downloads.
 services:

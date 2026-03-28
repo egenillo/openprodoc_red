@@ -217,9 +217,44 @@ PD.TaskExecFreq=30000
 
 ----
 
-## Aceleracion GPU
+## Aceleracion GPU y Seleccion de Imagen Ollama
 
-La aceleracion GPU para Ollama se soporta mediante archivos de sobreescritura:
+Ollama puede utilizar una GPU para acelerar significativamente la inferencia del LLM. Se proporcionan scripts de inicio que detectan automaticamente la disponibilidad de GPU y aplican la configuracion correcta de Docker Compose.
+
+### Opciones de Imagen Ollama
+
+| Imagen | Tamano | Caso de uso |
+|---|---|---|
+| `ollama/ollama:0.18.2` | **~3.86 GB** | Imagen completa con drivers GPU para NVIDIA y AMD. Usar cuando hay GPU disponible. |
+| `alpine/ollama:0.18.2` | **~70 MB** | Imagen reducida solo CPU sin drivers GPU. Usar cuando no hay GPU disponible. |
+
+Cuando no se detecta GPU, los scripts de inicio usan automaticamente la imagen ligera `alpine/ollama` mediante el override `docker-compose.cpu-light.yml`, evitando una descarga de 3.86 GB que no aporta beneficio sin GPU.
+
+### Opciones de los Scripts de Inicio
+
+Los scripts aceptan un parametro opcional para forzar un modo especifico:
+
+```bash
+./start-linux.sh              # Auto-detectar: GPU → imagen completa, sin GPU → alpine
+./start-linux.sh --light      # Forzar alpine/ollama (~70 MB, solo CPU)
+./start-linux.sh --cpu        # Forzar ollama/ollama (~3.86 GB, modo CPU, sin override GPU)
+./start-linux.sh --nvidia     # Forzar modo NVIDIA GPU
+./start-linux.sh --amd        # Forzar modo AMD GPU (solo Linux)
+```
+
+```cmd
+start-windows.bat             # Auto-detectar: NVIDIA → imagen completa, sin GPU → alpine
+start-windows.bat --light     # Forzar alpine/ollama (~70 MB, solo CPU)
+start-windows.bat --cpu       # Forzar ollama/ollama (~3.86 GB, modo CPU)
+start-windows.bat --nvidia    # Forzar modo NVIDIA GPU
+```
+
+### Requisitos Previos para GPU
+
+- **NVIDIA**: Los drivers de NVIDIA y el [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) deben estar instalados en el host. Compatible con Linux y Windows.
+- **AMD**: Se requieren GPU y drivers compatibles con ROCm. **Solo Linux** — la imagen Docker `ollama/ollama:0.18.2-rocm` esta disenada especificamente para sistemas Linux con GPUs AMD y no es compatible con Windows ni macOS.
+
+### Override Manual (sin scripts de inicio)
 
 ```bash
 # GPU NVIDIA
@@ -228,11 +263,12 @@ docker compose -f docker-compose.yml -f docker-compose.nvidia.yml up -d
 # GPU AMD (solo Linux)
 docker compose -f docker-compose.yml -f docker-compose.amd.yml up -d
 
-# Solo CPU (por defecto)
+# CPU-light (alpine/ollama, ~70 MB)
+docker compose -f docker-compose.yml -f docker-compose.cpu-light.yml up -d
+
+# CPU estandar (ollama/ollama, ~3.86 GB)
 docker compose up -d
 ```
-
-Los scripts `start-linux.sh` y `start-windows.bat` auto-detectan GPUs.
 
 ----
 
@@ -331,6 +367,7 @@ PGPASSWORD=pass1 psql -h localhost -U user1 -d prodoc -c "
 | `docker-compose.yml` | Archivo compose principal (solo contenedores RAG, sin core-engine) |
 | `docker-compose.nvidia.yml` | Sobreescritura GPU NVIDIA para Ollama |
 | `docker-compose.amd.yml` | Sobreescritura GPU AMD para Ollama (solo Linux) |
+| `docker-compose.cpu-light.yml` | Override CPU-light — usa alpine/ollama (~70 MB) en lugar de la imagen completa (~3.86 GB) |
 | `.env.example` | Plantilla de configuracion — copiar a `.env` y editar |
 | `rag-init-external.sh` | Script de inicializacion para OpenProdoc externo |
 | `init-pgvector.sql` | Inicializacion de la base de datos pgvector |

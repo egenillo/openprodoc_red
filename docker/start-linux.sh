@@ -4,7 +4,7 @@
 # Usage:
 #   ./start-linux.sh           Auto-detect GPU
 #   ./start-linux.sh --light   Force CPU-light mode (alpine/ollama, ~70 MB)
-#   ./start-linux.sh --cpu     Force standard CPU mode (ollama/ollama, ~1.2 GB)
+#   ./start-linux.sh --cpu     Force standard CPU mode (ollama/ollama, ~3.86 GB)
 #   ./start-linux.sh --nvidia  Force NVIDIA GPU mode
 #   ./start-linux.sh --amd     Force AMD GPU mode
 
